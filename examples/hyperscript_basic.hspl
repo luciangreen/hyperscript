@@ -1,0 +1,36 @@
+% examples/hyperscript_basic.hspl
+% Stage 1 HyperScript example – covers all core syntax forms.
+
+% Basic assignment and string concatenation
+put "hello" into X
+put X & " world" into Y
+write Y
+
+% Arithmetic
+put 6 into A
+put 7 into B
+put A * B into C
+write C
+
+% Numeric loop
+repeat with I from 1 to 5
+    write I
+end repeat
+
+% If / then / else
+put "yes" into Answer
+if Answer = "yes" then
+    write "Correct!"
+else
+    write "Incorrect."
+end if
+
+% Nested arithmetic in expressions
+put (10 + 5) * 2 into Total
+write Total
+
+% List construction with concatenation
+put [1,2,3] into L1
+put [4,5,6] into L2
+put L1 & L2 into L3
+write L3
