@@ -1,0 +1,380 @@
+Below is a GitHub Agent-ready requirements prompt.
+
+Task: Implement a HyperCard-style HyperScript basic prelude interpreter for the Starlog repository.
+Repository:
+- Use https://github.com/luciangreen/Starlog as the base.
+- Preserve existing Starlog syntax, demos, tests, and conversion behaviour.
+- Add new files rather than breaking existing APIs unless refactoring is necessary.
+Goal:
+Build a working HyperScript interpreter with:
+1. WAM-style Prolog execution core.
+2. Basic Prolog prelude.
+3. Working REPL.
+4. Line-by-line tracing with full input/output.
+5. Error detection and readable diagnostics.
+6. Delete-character support in the REPL/editor input.
+7. Conversion to/from compressed Starlog.
+8. Option to emit compressed Starlog as either:
+   - method chaining, or
+   - nested predicate calls.
+Suggested new files:
+- hyperscript.pl
+- hyperscript_parser.pl
+- hyperscript_wam.pl
+- hyperscript_prelude.pl
+- hyperscript_repl.pl
+- hyperscript_trace.pl
+- hyperscript_errors.pl
+- hyperscript_starlog_convert.pl
+- hyperscript_tests.pl
+- examples/hyperscript_basic.hspl
+- examples/hyperscript_repl_demo.pl
+1. HyperScript language
+Implement a HyperCard-inspired scripting layer with simple readable syntax.
+Required syntax examples:
+    put "hello" into X
+    put X & " world" into Y
+    write Y
+    ask "Name?" giving Name
+    if X = "yes" then write "ok"
+    repeat with I from 1 to 10
+        write I
+    end repeat
+Support:
+- variables
+- strings
+- atoms
+- numbers
+- lists
+- assignment-like `put Expr into Var`
+- method-chain expressions
+- nested predicate-call expressions
+- if/then/else
+- repeat loops
+- predicate calls
+- Prolog queries
+- Starlog expressions
+2. WAM execution core
+Implement a small WAM-style execution engine in Prolog.
+The engine must model:
+- heap
+- environment stack
+- choice-point stack
+- trail
+- unification
+- backtracking
+- predicate call frames
+- failure and retry
+- cut
+- variable bindings
+- line/source mapping for trace output
+Required predicates:
+    hs_compile(+Source, -Bytecode)
+    hs_run(+Bytecode, -Result)
+    hs_query(+Source, -Solutions)
+    hs_step(+State0, -State1)
+    hs_trace(+Source)
+The WAM does not need to be a full ISO Prolog implementation internally at first, but it must behave correctly for the supported prelude predicates and basic Prolog programs.
+3. Basic Prolog prelude
+Support all basic Prolog predicates normally expected for beginner/intermediate Prolog use.
+Minimum required categories:
+Unification/control:
+- =/2
+- \=/2
+- ==/2
+- \==/2
+- var/1
+- nonvar/1
+- ground/1
+- true/0
+- fail/0
+- false/0
+- !/0
+- once/1
+- call/1
+- not/1
+- \+/1
+- conjunction
+- disjunction
+- if-then
+- if-then-else
+Arithmetic:
+- is/2
+- =:=/2
+- =\=/2
+- >/2
+- </2
+- >=/2
+- =</2
+- +, -, *, /, //, mod, rem, abs, min, max, round, floor, ceiling
+Lists:
+- member/2
+- append/3
+- length/2
+- reverse/2
+- nth0/3
+- nth1/3
+- select/3
+- last/2
+- flatten/2
+- maplist/2
+- maplist/3
+- foldl/4
+- findall/3
+- bagof/3
+- setof/3
+Terms:
+- functor/3
+- arg/3
+- =../2
+- copy_term/2
+- term_variables/2
+Atoms/strings:
+- atom/1
+- string/1
+- number/1
+- atom_string/2
+- number_string/2
+- atom_concat/3
+- string_concat/3
+- sub_string/5
+- split_string/4
+- atomic_list_concat/2
+- atomic_list_concat/3
+I/O:
+- write/1
+- writeln/1
+- nl/0
+- read/1
+- read_string/2
+- read_line_to_string/2
+Dynamic database:
+- assertz/1
+- asserta/1
+- retract/1
+- retractall/1
+- clause/2
+- current_predicate/1
+4. REPL
+Create a working REPL:
+    ?- hs_repl.
+Features:
+- prompt: `HyperScript> `
+- accepts HyperScript commands
+- accepts Prolog queries
+- accepts Starlog expressions
+- supports multiline input
+- supports delete/backspace character
+- supports history if possible
+- prints bindings clearly
+- prints all solutions using `;`
+- supports commands:
+    :help
+    :quit
+    :trace on
+    :trace off
+    :load File
+    :reload
+    :starlog compressed
+    :starlog method_chain
+    :starlog nested
+    :wam
+    :env
+    :clear
+Example:
+    HyperScript> put "Hello" into X
+    X = "Hello".
+    HyperScript> member(X,[a,b,c]).
+    X = a ;
+    X = b ;
+    X = c ;
+    false.
+5. Delete character support
+The REPL must correctly handle:
+- backspace
+- delete
+- Ctrl-H
+- accidental visible delete characters
+- Unicode replacement/delete edge cases where possible
+Acceptance test:
+Typing:
+    put "Hellp" <delete/backspace> "o" into X
+must result in:
+    X = "Hello".
+If terminal raw character handling is unavailable, implement a fallback normalisation predicate:
+    hs_normalise_input(+Raw, -Clean)
+which removes or applies delete characters before parsing.
+6. Trace by line with full I/O
+Implement line-aware tracing.
+Trace must show:
+- source line number
+- original source line
+- compiled WAM instruction
+- call
+- exit
+- redo
+- fail
+- variable bindings
+- I/O reads
+- I/O writes
+- choice-point creation/removal
+- errors with line/column
+Example trace:
+    [line 1] CALL put "Hello" into X
+    [line 1] EXIT X = "Hello"
+    [line 2] CALL write X
+    [line 2] IO write("Hello")
+    [line 2] EXIT true
+Required predicates:
+    hs_trace_source(+Source)
+    hs_trace_file(+File)
+    hs_trace_query(+Query)
+    hs_set_trace(+on_or_off)
+7. Error detection
+Add structured error detection.
+Detect:
+- syntax errors
+- unknown predicate
+- wrong arity
+- instantiation error
+- type error
+- domain error
+- permission error for unsafe database operations
+- singleton variables
+- unused variables
+- unbound variable in arithmetic
+- failed conversion to Starlog
+- failed conversion from Starlog
+- unsupported prelude predicate
+- malformed method chain
+- malformed nested predicate call
+- unterminated string
+- missing `end repeat`
+- missing `then`
+- invalid assignment target
+Error format:
+    error{
+      type: syntax_error,
+      message: "Expected `then` after condition",
+      file: File,
+      line: Line,
+      column: Column,
+      source: SourceLine,
+      hint: "Use: if X = yes then ..."
+    }
+Add pretty printer:
+    hs_print_error(+Error)
+8. Conversion to/from compressed Starlog
+Implement two-way conversion:
+    hs_to_starlog(+HyperScriptSource, +Options, -StarlogSource)
+    starlog_to_hs(+StarlogSource, +Options, -HyperScriptSource)
+Options:
+- compressed(true/false)
+- style(method_chain/nested)
+- preserve_comments(true/false)
+- trace(true/false)
+Compressed method-chain style example:
+    X is "Hello" : "World" >> string_length
+Nested predicate-call style example:
+    string_length(string_concat("Hello","World"), X)
+The converter must support:
+- Starlog `:` string concatenation
+- Starlog `&` list append
+- Starlog `•` atom concat
+- method chains with `>>`
+- nested function/predicate calls
+- arithmetic
+- lists
+- output variable placement
+- result-last built-ins
+- conversion back into readable HyperScript
+9. Method chaining and nested call option
+Provide a single option controlling output style.
+Example API:
+    hs_convert(File, OutFile, [to(starlog), compressed(true), style(method_chain)]).
+    hs_convert(File, OutFile, [to(starlog), compressed(true), style(nested)]).
+    hs_convert(File, OutFile, [from(starlog), style(method_chain)]).
+Acceptance example:
+HyperScript:
+    put "Hello" & "World" into X
+    put length(X) into N
+Method-chain Starlog:
+    starlog_call(X is "Hello":"World"),
+    starlog_call(N is X >> string_length).
+Nested Starlog:
+    string_concat("Hello","World",X),
+    string_length(X,N).
+10. Parser/compiler pipeline
+Implement pipeline:
+    HyperScript source
+      -> tokens
+      -> AST
+      -> semantic checks
+      -> WAM bytecode
+      -> execution
+      -> trace/repl output
+Also support:
+    HyperScript source
+      -> AST
+      -> compressed Starlog
+      -> Prolog
+and:
+    Starlog
+      -> AST
+      -> HyperScript source
+Required predicates:
+    hs_tokenise(+Source, -Tokens)
+    hs_parse(+Tokens, -AST)
+    hs_semantic_check(+AST, -CheckedAST, -Errors)
+    hs_compile_ast(+CheckedAST, -Bytecode)
+    hs_execute(+Bytecode, -Result)
+11. Tests
+Add tests for:
+- REPL parsing
+- delete/backspace handling
+- basic unification
+- arithmetic
+- lists
+- findall/bagof/setof
+- assert/retract
+- method-chain conversion
+- nested-call conversion
+- Starlog round-trip conversion
+- trace output
+- syntax errors
+- runtime errors
+- WAM backtracking
+- cut behaviour
+- full I/O examples
+Run with:
+    swipl -q -s hyperscript_tests.pl -g run_tests -t halt
+12. Demos
+Add demos:
+    swipl -q -s examples/hyperscript_repl_demo.pl -g main
+    swipl -q -s hyperscript.pl -g hs_repl
+    swipl -q -s hyperscript.pl -g "hs_trace_file('examples/hyperscript_basic.hspl')" -t halt
+13. Documentation
+Update README with:
+- what HyperScript is
+- REPL usage
+- examples
+- supported Prolog predicates
+- Starlog conversion examples
+- method-chain vs nested-call output
+- tracing examples
+- error examples
+- known unsupported ISO predicates
+- how to run tests
+14. Acceptance criteria
+The task is complete when:
+- `hs_repl.` starts a usable REPL.
+- Backspace/delete characters are handled correctly.
+- Basic Prolog queries work.
+- HyperScript `put`, `write`, `ask`, `if`, and `repeat` work.
+- WAM-style backtracking works for `member/2`, `append/3`, and user predicates.
+- Trace output shows line-by-line calls, exits, failures, redos, and I/O.
+- HyperScript converts to compressed Starlog.
+- Compressed Starlog converts back to HyperScript.
+- Output style can be switched between method chaining and nested predicate calls.
+- Tests pass with `run_tests`.
+- Existing Starlog demos still work.
