@@ -14,6 +14,12 @@
     hs_run_file/1,
     hs_execute/3,
     hs_eval/3,
+    hs_eval_cond/2,
+    hs_apply_cond/3,
+    hs_print_value/1,
+    hs_concat/3,
+    hs_arith/4,
+    hs_apply_method/4,
     hs_tokenise/2,
     hs_parse/2
 ]).
@@ -220,8 +226,7 @@ hs_eval(call(F, ArgExprs), Env, Val) :-
     call(Goal), !,
     Val = true.
 
-% method name as atom (0-arg method)
-hs_eval(atom(A), _, A).
+% method name as atom (0-arg method) – handled by the hs_eval(atom(A),_,A) clause above.
 
 % Arithmetic evaluation of nested arith/2 terms (from tokeniser output used in
 % is/2 expression position)
