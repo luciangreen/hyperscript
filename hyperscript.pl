@@ -226,7 +226,7 @@ hs_eval(call(F, ArgExprs), Env, Val) :-
     call(Goal), !,
     Val = true.
 
-% method name as atom (0-arg method) – handled by the atom/2 clause above.
+% method name as atom (0-arg method) – handled by the hs_eval(atom(A),_,A) clause above.
 
 % Arithmetic evaluation of nested arith/2 terms (from tokeniser output used in
 % is/2 expression position)

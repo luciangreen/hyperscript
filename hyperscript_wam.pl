@@ -184,7 +184,9 @@ cell_to_prolog(_, ref(A), '$ref'(A)).   % should not arise after deref
 %% prolog_to_heap(+H0, +HTop0, +Trail0, +Term, -Addr, -H1, -HTop1, -Trail1)
 % Allocate a Prolog term on the WAM heap; return its address.
 prolog_to_heap(H0, HTop, Trail, V, Addr, H1, HTop1, Trail) :-
-    (atom(V) ; number(V) ; string(V)), V \= [], !,
+    ( atom(V) ; number(V) ; string(V) ),
+    V \= [],   % [] is an atom in Prolog but maps to the nil cell
+    !,
     heap_alloc(H0, HTop, const(V), Addr, H1, HTop1).
 prolog_to_heap(H0, HTop, Trail, [], Addr, H1, HTop1, Trail) :- !,
     heap_alloc(H0, HTop, nil, Addr, H1, HTop1).
@@ -287,11 +289,8 @@ compile_stmt(call(F, Args), N,
 
 compile_stmt(if(Cond, Then, Else), N,
     [wam_instr(N, hs_if(Cond, ThenCode, ElseCode))]) :-
-    compile_stmts(Then, N, ThenCode0),
-    compile_stmts(Else, N, ElseCode0),
-    % Wrap sub-bodies with proceed so they halt the sub-execution
-    append(ThenCode0, [], ThenCode),
-    append(ElseCode0, [], ElseCode).
+    compile_stmts(Then, N, ThenCode),
+    compile_stmts(Else, N, ElseCode).
 
 compile_stmt(repeat_with(Var, From, To, Body), N,
     [wam_instr(N, hs_repeat(Var, From, To, BodyCode))]) :-
