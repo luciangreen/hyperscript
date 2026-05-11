@@ -31,6 +31,10 @@
     hs_query_env/3,
     hs_step/2,
     hs_trace/1,
+    hs_trace_source/1,
+    hs_trace_file/1,
+    hs_trace_query/1,
+    hs_set_trace/1,
     hs_compile_ast/2,
     wam_initial_state/2,
     wam_state_done/1,
@@ -638,3 +642,147 @@ hs_trace_run(State0) :-
     State0 = wam(_, _, _, _, _, [], run), !,
     hs_step(State0, State1),
     hs_trace_run(State1).
+
+% ===========================================================================
+% Stage 6: Line-aware tracing with full I/O
+% ===========================================================================
+
+%% hs_set_trace(+OnOrOff)
+% Set the global trace flag (on or off).  When on, hs_run/1 and hs_run_file/1
+% will automatically emit trace output.
+:- dynamic hs_trace_enabled/1.
+hs_trace_enabled(off).
+
+hs_set_trace(OnOrOff) :-
+    retractall(hs_trace_enabled(_)),
+    assertz(hs_trace_enabled(OnOrOff)).
+
+%% hs_trace_source(+Source)
+% Compile Source and execute step-by-step with enhanced line-aware trace output.
+hs_trace_source(Source) :-
+    hs_compile(Source, Bytecode),
+    wam_initial_state(Bytecode, State0),
+    hs_trace_run_s6(State0, []).
+
+%% hs_trace_file(+File)
+% Load a .hspl file and trace its execution line by line.
+hs_trace_file(File) :-
+    read_file_to_string(File, Source, []),
+    hs_trace_source(Source).
+
+%% hs_trace_query(+Query)
+% Compile and trace Query as a HyperScript/Prolog source string.
+% Equivalent to hs_trace_source/1 but named for Prolog-query use.
+hs_trace_query(Query) :-
+    hs_trace_source(Query).
+
+% ---------------------------------------------------------------------------
+% WAM op → human-readable string
+% ---------------------------------------------------------------------------
+
+%% wam_op_str(+Op, -Str)
+% Format a WAM instruction operand as a concise, human-readable string.
+wam_op_str(hs_put(Expr, Var), S) :- !,
+    format(atom(S), "put ~w into ~w", [Expr, Var]).
+wam_op_str(hs_write(Expr), S) :- !,
+    format(atom(S), "write ~w", [Expr]).
+wam_op_str(hs_nl, "nl") :- !.
+wam_op_str(hs_ask(Prompt, Var), S) :- !,
+    format(atom(S), "ask ~w giving ~w", [Prompt, Var]).
+wam_op_str(hs_if(Cond, _, _), S) :- !,
+    format(atom(S), "if ~w", [Cond]).
+wam_op_str(hs_repeat(Var, From, To, _), S) :- !,
+    format(atom(S), "repeat ~w from ~w to ~w", [Var, From, To]).
+wam_op_str(hs_call(F, Args), S) :- !,
+    format(atom(S), "~w(~w)", [F, Args]).
+wam_op_str(try_me_else(_), "try_me_else") :- !.
+wam_op_str(proceed, "proceed") :- !.
+wam_op_str(fail, "fail") :- !.
+wam_op_str(cut, "cut") :- !.
+wam_op_str(Op, S) :- format(atom(S), "~w", [Op]).
+
+% ---------------------------------------------------------------------------
+% Enhanced trace runner  (hs_trace_run_s6/2)
+% ---------------------------------------------------------------------------
+
+%% hs_trace_run_s6(+State, +PrevHsEnv)
+% Step through the WAM State, emitting structured trace events:
+%
+%   [line N] CALL  <human-readable op>
+%   [line N] IO write(<value>)           – for hs_write instructions
+%   [line N] IO read(<var>)              – for hs_ask instructions
+%   [line N] CP+  (count: N)             – choice-point created
+%   [line N] CP-  (count: N)             – choice-point removed (backtrack)
+%   [line N] REDO                        – re-entering after backtrack
+%   [line N] EXIT <Name = Val | true>    – successful step, new bindings
+%   [line N] FAIL                        – step failed
+%   [trace]  halt | fail                 – final status
+%   [bindings] Name = Val                – final variable bindings
+
+hs_trace_run_s6(State, _PrevEnv) :-
+    wam_state_done(State), !,
+    State = wam(Heap, _, WamEnv, _, _, _, Status),
+    format("[trace] ~w~n", [Status]),
+    wam_env_to_hs(WamEnv, Heap, HsEnv),
+    ( HsEnv \= [] ->
+        forall(member(Name-Val, HsEnv),
+               format("[bindings] ~w = ~w~n", [Name, Val]))
+    ; true ).
+
+hs_trace_run_s6(State0, _) :-
+    State0 = wam(H0, _, Env0, CPs0, _, [Instr | _], run), !,
+    Instr = wam_instr(Line, Op),
+    wam_op_str(Op, Display),
+    format("[line ~w] CALL ~w~n", [Line, Display]),
+    % Announce choice-point creation for try_me_else
+    length(CPs0, NCPs0),
+    ( Op = try_me_else(_) ->
+        NCPsNew is NCPs0 + 1,
+        format("[line ~w] CP+ (count: ~w)~n", [Line, NCPsNew])
+    ; true ),
+    % Pre-announce I/O for write and ask instructions
+    wam_env_to_hs(Env0, H0, HsEnv0),
+    ( Op = hs_write(WriteExpr) ->
+        ( catch(hs_eval(WriteExpr, HsEnv0, WriteVal), _, WriteVal = '?')
+        -> format("[line ~w] IO write(~w)~n", [Line, WriteVal])
+        ;  format("[line ~w] IO write(?)~n", [Line])
+        )
+    ; Op = hs_ask(_, ReadVar) ->
+        format("[line ~w] IO read(~w)~n", [Line, ReadVar])
+    ; true ),
+    % Execute the WAM step
+    hs_step(State0, State1),
+    State1 = wam(H1, _, Env1, CPs1, _, _, Status1),
+    % Detect choice-point removal (backtracking occurred)
+    length(CPs1, NCPs1),
+    ( NCPs1 < NCPs0 ->
+        format("[line ~w] CP- (count: ~w)~n", [Line, NCPs1]),
+        format("[line ~w] REDO~n", [Line])
+    ; true ),
+    % Show EXIT with new/changed bindings, or FAIL
+    wam_env_to_hs(Env1, H1, HsEnv1),
+    ( Status1 == fail ->
+        format("[line ~w] FAIL~n", [Line])
+    ;
+        s6_new_bindings(HsEnv0, HsEnv1, NewBindings),
+        ( NewBindings = [] ->
+            format("[line ~w] EXIT true~n", [Line])
+        ;
+            forall(member(BName-BVal, NewBindings),
+                   format("[line ~w] EXIT ~w = ~w~n", [Line, BName, BVal]))
+        )
+    ),
+    hs_trace_run_s6(State1, HsEnv1).
+
+hs_trace_run_s6(State0, PrevEnv) :-
+    State0 = wam(_, _, _, _, _, [], run), !,
+    hs_step(State0, State1),
+    hs_trace_run_s6(State1, PrevEnv).
+
+%% s6_new_bindings(+OldEnv, +NewEnv, -NewOrChangedBindings)
+% Select bindings from NewEnv that are absent or changed in OldEnv.
+s6_new_bindings(OldEnv, NewEnv, NewBindings) :-
+    include(s6_binding_changed(OldEnv), NewEnv, NewBindings).
+
+s6_binding_changed(OldEnv, Name-Val) :-
+    \+ memberchk(Name-Val, OldEnv).
