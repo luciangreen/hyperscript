@@ -26,21 +26,41 @@
 :- use_module(hyperscript_wam, [hs_query_env/3, hs_trace/1]).
 
 % ---------------------------------------------------------------------------
-% Stage 5 helper: delete / backspace normalisation
+% Stage 5: delete / backspace normalisation
 % ---------------------------------------------------------------------------
 
 %% hs_normalise_input(+Raw, -Clean)
-% Process a raw input string, applying backspace (ASCII 8, ^H) and
-% delete (ASCII 127, DEL) characters so that each such character removes
-% the immediately preceding character from the buffer.
+% Process a raw input string, applying backspace/delete characters so that
+% each such character removes the immediately preceding character from the
+% buffer.  Handled forms:
+%
+%   ASCII 8   (^H / Ctrl-H / Backspace)
+%   ASCII 127 (DEL)
+%   Visible two-character sequences  ^H  (0x5E 0x48) and  ^?  (0x5E 0x3F)
+%   Unicode SYMBOL FOR BACKSPACE  U+2408  (code point 9224)
+%   Unicode SYMBOL FOR DELETE     U+2421  (code point 9249)
 %
 % Example:
 %   hs_normalise_input("hellp\bo", "hello")   % \b = ASCII 8
 hs_normalise_input(Raw, Clean) :-
     string_codes(Raw, Codes),
-    normalise_codes(Codes, [], RevClean),
+    expand_visible_controls(Codes, Expanded),
+    normalise_codes(Expanded, [], RevClean),
     reverse(RevClean, CleanCodes),
     string_codes(Clean, CleanCodes).
+
+%% expand_visible_controls(+Codes, -Expanded)
+% Replace visible two-character control sequences with the corresponding
+% single control code before the delete-character pass:
+%   ^H  (0x5E 0x48 = 94 72)  →  8   (backspace)
+%   ^?  (0x5E 0x3F = 94 63)  →  127 (DEL)
+expand_visible_controls([], []).
+expand_visible_controls([0'^ , 0'H | Rest], [8   | Expanded]) :- !,
+    expand_visible_controls(Rest, Expanded).
+expand_visible_controls([0'^ , 0'? | Rest], [127 | Expanded]) :- !,
+    expand_visible_controls(Rest, Expanded).
+expand_visible_controls([C | Rest], [C | Expanded]) :-
+    expand_visible_controls(Rest, Expanded).
 
 normalise_codes([], Acc, Acc).
 normalise_codes([C | Cs], Acc, Result) :-
@@ -51,9 +71,11 @@ normalise_codes([C | Cs], Acc, Result) :-
     normalise_codes(Cs, Acc1, Result).
 
 %% hs_delete_code(+Code)
-% True when Code is a backspace or delete character.
-hs_delete_code(8).    % ASCII 8   = ^H / Backspace
-hs_delete_code(127).  % ASCII 127 = DEL
+% True when Code is a backspace or delete character (any supported form).
+hs_delete_code(8).    % ASCII 8     = ^H / Ctrl-H / Backspace
+hs_delete_code(127).  % ASCII 127   = DEL
+hs_delete_code(9224). % U+2408      = SYMBOL FOR BACKSPACE (␈)
+hs_delete_code(9249). % U+2421      = SYMBOL FOR DELETE    (␡)
 
 % ---------------------------------------------------------------------------
 % REPL global state (one repl_state/2 fact per key)
