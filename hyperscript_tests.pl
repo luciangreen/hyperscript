@@ -8,6 +8,7 @@
 :- use_module(library(plunit)).
 :- use_module(hyperscript).
 :- use_module(hyperscript_wam).
+:- use_module(hyperscript_prelude).
 
 % ---------------------------------------------------------------------------
 % Tokeniser tests
@@ -191,6 +192,57 @@ test(predicate_call) :-
     Output == "hello\n".
 
 :- end_tests(execution).
+
+% ---------------------------------------------------------------------------
+% Stage 3 prelude tests
+% ---------------------------------------------------------------------------
+
+:- begin_tests(stage3_prelude).
+
+test(prelude_registry_contains_core_predicates) :-
+    hs_prelude_supported(member, 2),
+    hs_prelude_supported(append, 3),
+    hs_prelude_supported(length, 2),
+    hs_prelude_supported(atom_string, 2),
+    hs_prelude_supported(assertz, 1).
+
+test(expr_call_length_result_last) :-
+    exec("put length([a,b,c]) into N", Env),
+    memberchk('N'-3, Env).
+
+test(expr_call_reverse_result_last) :-
+    exec("put reverse([1,2,3]) into R", Env),
+    memberchk('R'-[3,2,1], Env).
+
+test(expr_call_atom_concat_result_last) :-
+    exec("put atom_concat('hello','world') into A", Env),
+    memberchk('A'-helloworld, Env).
+
+test(expr_call_number_string_result_last) :-
+    exec("put number_string(42) into S", Env),
+    memberchk('S'-"42", Env).
+
+test(expr_call_abs_arithmetic) :-
+    exec("put abs(-5) into N", Env),
+    memberchk('N'-5, Env).
+
+test(query_append_backtracks_three_solutions) :-
+    hs_query("append(X,Y,[a,b])", Solutions),
+    length(Solutions, 3),
+    Solutions = [E1, E2, E3],
+    memberchk('X'-[], E1),
+    memberchk('Y'-[a,b], E1),
+    memberchk('X'-[a], E2),
+    memberchk('Y'-[b], E2),
+    memberchk('X'-[a,b], E3),
+    memberchk('Y'-[], E3).
+
+test(query_nonvar_after_put) :-
+    hs_query("put 1 into X\nnonvar(X)", Solutions),
+    Solutions = [Env],
+    memberchk('X'-1, Env).
+
+:- end_tests(stage3_prelude).
 
 % ---------------------------------------------------------------------------
 % WAM compiler tests

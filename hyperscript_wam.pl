@@ -44,6 +44,7 @@
 
 :- use_module(library(assoc)).
 :- use_module(hyperscript_parser, [hs_tokenise/2, hs_parse/2]).
+:- use_module(hyperscript_prelude, [hs_prelude_call/2]).
 :- use_module(hyperscript,
         [ hs_eval/3, hs_eval_cond/2, hs_apply_cond/3,
           hs_print_value/1, hs_concat/3, hs_arith/4, hs_apply_method/4 ]).
@@ -420,8 +421,7 @@ wam_exec_instr(wam_instr(_, hs_call(F, ArgExprs)),
                wam(H, HTop, Env, CPs, Trail, Rest, run)) :- !,
     wam_env_to_hs(Env, H, HsEnv),
     maplist(hs_eval_arg_wam(HsEnv), ArgExprs, Args),
-    Goal =.. [F | Args],
-    call(Goal).
+    hs_prelude_call(F, Args).
 
 hs_eval_arg_wam(Env, Expr, Val) :- hs_eval(Expr, Env, Val).
 
@@ -481,11 +481,9 @@ mi_eval_cond(call(fail,  []), _,   _) :- !, fail.
 mi_eval_cond(call(false, []), _,   _) :- !, fail.
 mi_eval_cond(call(F, ArgExprs), Env0, Env1) :-
     mi_eval_list(ArgExprs, Env0, Env1, Args),
-    Goal =.. [F | Args],
-    call(Goal).
+    hs_prelude_call(F, Args).
 mi_eval_cond(call(F, []), Env, Env) :-
-    Goal =.. [F],
-    call(Goal).
+    hs_prelude_call(F, []).
 
 %% mi_env_set(+Name, +Val, +Env0, -Env1)
 % Update or insert Name=Val in the meta-interpreter env.
@@ -560,8 +558,7 @@ wam_mi_step(wam_instr(Line, hs_repeat(Var, FromExpr, ToExpr, BodyCode)),
 
 wam_mi_step(wam_instr(_, hs_call(F, ArgExprs)), Rest, Env0, EnvOut) :- !,
     mi_eval_list(ArgExprs, Env0, Env1, Args),
-    Goal =.. [F | Args],
-    call(Goal),
+    hs_prelude_call(F, Args),
     wam_meta_exec(Rest, Env1, EnvOut).
 
 % ===========================================================================
