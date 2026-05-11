@@ -121,6 +121,19 @@ S = "starlog_call(X is \"Hello\":\"World\").".
 HS = "put \"Hello\" & \"World\" into X".
 ```
 
+## Stage 9 – File conversion with style option
+
+Use `hs_convert/3` to convert files while selecting method-chain or nested style:
+
+```prolog
+?- hs_convert("in.hspl", "out.starlog",
+              [to(starlog), compressed(true), style(method_chain)]).
+?- hs_convert("in.hspl", "out.starlog",
+              [to(starlog), compressed(true), style(nested)]).
+?- hs_convert("in.starlog", "out.hspl",
+              [from(starlog), style(method_chain)]).
+```
+
 ---
 
 ## Running HyperScript files
@@ -153,6 +166,9 @@ hs_tokenise(+Source, -Tokens)
 
 % Parse token list to AST
 hs_parse(+Tokens, -Statements)
+
+% Convert files between HyperScript and Starlog
+hs_convert(+InputFile, +OutputFile, +Options)
 ```
 
 ---

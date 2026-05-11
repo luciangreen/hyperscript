@@ -1381,6 +1381,62 @@ test(s8_from_starlog_trace_prefix, [true]) :-
 :- end_tests(stage8_conversion).
 
 % ---------------------------------------------------------------------------
+% Stage 9 – Method chaining and nested call option via hs_convert/3
+% ---------------------------------------------------------------------------
+
+cleanup_temp_files([]).
+cleanup_temp_files([File|Rest]) :-
+    ( exists_file(File) -> delete_file(File) ; true ),
+    cleanup_temp_files(Rest).
+
+with_temp_conversion_files(Source, Goal) :-
+    tmp_file(hs_stage9, InFile),
+    tmp_file(hs_stage9, OutFile),
+    setup_call_cleanup(
+        open(InFile, write, InStream, [encoding(utf8)]),
+        write(InStream, Source),
+        close(InStream)
+    ),
+    call_cleanup(
+        call(Goal, InFile, OutFile),
+        cleanup_temp_files([InFile, OutFile])
+    ).
+
+:- begin_tests(stage9_convert_option).
+
+test(s9_hs_convert_to_starlog_method_chain, [true]) :-
+    Source = "put \"Hello\" & \"World\" into X\nput string_length(X) into N",
+    with_temp_conversion_files(Source,
+        {}/[InFile, OutFile]>>(
+            hs_convert(InFile, OutFile, [to(starlog), compressed(true), style(method_chain)]),
+            read_file_to_string(OutFile, Out, []),
+            sub_string(Out, _, _, _, "starlog_call(X is \"Hello\":\"World\")."),
+            sub_string(Out, _, _, _, "starlog_call(N is string_length(X)).")
+        )).
+
+test(s9_hs_convert_to_starlog_nested, [true]) :-
+    Source = "put \"Hello\" & \"World\" into X\nput string_length(X) into N",
+    with_temp_conversion_files(Source,
+        {}/[InFile, OutFile]>>(
+            hs_convert(InFile, OutFile, [to(starlog), compressed(true), style(nested)]),
+            read_file_to_string(OutFile, Out, []),
+            sub_string(Out, _, _, _, "string_concat(\"Hello\",\"World\",X)."),
+            sub_string(Out, _, _, _, "string_length(X,N).")
+        )).
+
+test(s9_hs_convert_from_starlog, [true]) :-
+    Source = "string_concat(\"Hello\",\"World\",X).\nstring_length(X,N).",
+    with_temp_conversion_files(Source,
+        {}/[InFile, OutFile]>>(
+            hs_convert(InFile, OutFile, [from(starlog), style(method_chain)]),
+            read_file_to_string(OutFile, Out, []),
+            sub_string(Out, _, _, _, "put \"Hello\" & \"World\" into X"),
+            sub_string(Out, _, _, _, "put string_length(X) into N")
+        )).
+
+:- end_tests(stage9_convert_option).
+
+% ---------------------------------------------------------------------------
 % Test runner entry point
 %
 % The built-in plunit run_tests/0 is used:

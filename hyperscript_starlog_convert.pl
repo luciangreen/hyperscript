@@ -4,11 +4,41 @@
 
 :- module(hyperscript_starlog_convert, [
     hs_to_starlog/3,
-    starlog_to_hs/3
+    starlog_to_hs/3,
+    hs_convert/3
 ]).
 
 :- use_module(hyperscript_parser, [hs_tokenise/2, hs_parse/2]).
 :- use_module(hyperscript_errors, [hs_conversion_error/3]).
+
+%% hs_convert(+InputFile, +OutputFile, +Options)
+% Stage 9: file-based conversion entrypoint with direction and style options.
+hs_convert(InputFile, OutputFile, Options) :-
+    read_file_to_string(InputFile, InputSource, []),
+    hs_convert_direction(Options, Direction),
+    catch(
+        ( hs_convert_source(Direction, InputSource, Options, OutputSource),
+          setup_call_cleanup(
+              open(OutputFile, write, Stream, [encoding(utf8)]),
+              write(Stream, OutputSource),
+              close(Stream))
+        ),
+        E,
+        ( hs_conversion_error(Direction, E, Err),
+          throw(Err)
+        )
+    ).
+
+hs_convert_direction(Options, to_starlog) :-
+    memberchk(to(starlog), Options), !.
+hs_convert_direction(Options, from_starlog) :-
+    memberchk(from(starlog), Options), !.
+hs_convert_direction(_, to_starlog).
+
+hs_convert_source(to_starlog, InputSource, Options, OutputSource) :-
+    hs_to_starlog(InputSource, Options, OutputSource).
+hs_convert_source(from_starlog, InputSource, Options, OutputSource) :-
+    starlog_to_hs(InputSource, Options, OutputSource).
 
 %% hs_to_starlog(+HyperScriptSource, +Options, -StarlogSource)
 hs_to_starlog(HyperScriptSource, Options, StarlogSource) :-
