@@ -288,7 +288,7 @@ term_to_hs_line(Term, VNs, Line) :-
     compound(Term), !,
     Term =.. [F | Args],
     ( append(InArgs, [OutArg], Args),
-      term_is_var(OutArg)
+      var(OutArg)
     -> maplist(term_to_hs_expr_text_(VNs), InArgs, InTexts),
        atomic_list_concat(InTexts, ",", ArgStr),
        term_to_hs_var_name(OutArg, VNs, OutName),
@@ -345,8 +345,6 @@ term_to_hs_expr_text(Term, VNs, Text) :-
        format(string(Text), "~w(~w)", [F, ArgStr])
     ; format(string(Text), "~q", [Term])
     ).
-
-term_is_var(Term) :- var(Term).
 
 term_to_hs_var_name(Term, VNs, Name) :-
     ( var(Term),
