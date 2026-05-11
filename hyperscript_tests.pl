@@ -1,6 +1,7 @@
 %% hyperscript_tests.pl
 %%
-%% Stage 1 + Stage 2 (WAM) + Stage 4 (REPL) + Stage 5 (delete-char) tests.
+%% Stage 1 + Stage 2 (WAM) + Stage 4 (REPL) + Stage 5 (delete-char)
+%% + Stage 6 (line-aware tracing) tests.
 %%
 %% Run with:
 %%   swipl -q -s hyperscript_tests.pl -g run_tests -t halt
@@ -928,6 +929,174 @@ test(s5_empty_string_unchanged) :-
     Clean == "".
 
 :- end_tests(stage5_delete_char).
+
+% ---------------------------------------------------------------------------
+% Stage 6 – Line-aware tracing with full I/O
+% ---------------------------------------------------------------------------
+%
+% Tests for:
+%   hs_trace_source(+Source)   – trace HyperScript source
+%   hs_trace_file(+File)       – trace a .hspl file
+%   hs_trace_query(+Query)     – trace a source string (query form)
+%   hs_set_trace(+on_or_off)   – global trace toggle
+%
+% Trace output format (per step):
+%   [line N] CALL <readable op>
+%   [line N] IO write(<val>)   (write instructions)
+%   [line N] IO read(<var>)    (ask instructions)
+%   [line N] CP+ (count: N)    (choice-point created)
+%   [line N] CP- (count: N)    (choice-point removed / backtrack)
+%   [line N] REDO              (re-entering after backtrack)
+%   [line N] EXIT <Name = Val | true>
+%   [line N] FAIL
+%   [trace]  halt | fail
+%   [bindings] Name = Val
+% ---------------------------------------------------------------------------
+
+:- begin_tests(stage6_trace).
+
+% hs_set_trace/1 -------------------------------------------------------
+
+test(s6_set_trace_on_off) :-
+    hs_set_trace(on),
+    hs_set_trace(off).   % cleanup – must not throw
+
+% hs_trace_source/1 – basic structure ----------------------------------
+
+test(s6_trace_source_produces_output) :-
+    with_output_to(string(Out),
+        hs_trace_source("put 1 into X")),
+    Out \= "".
+
+test(s6_trace_source_shows_call) :-
+    with_output_to(string(Out),
+        hs_trace_source("put 1 into X")),
+    sub_string(Out, _, _, _, "CALL").
+
+test(s6_trace_source_shows_line_number) :-
+    with_output_to(string(Out),
+        hs_trace_source("put 1 into X")),
+    sub_string(Out, _, _, _, "[line 1]").
+
+test(s6_trace_source_shows_two_line_numbers) :-
+    with_output_to(string(Out),
+        hs_trace_source("put 1 into X\nput 2 into Y")),
+    sub_string(Out, _, _, _, "[line 1]"),
+    sub_string(Out, _, _, _, "[line 2]").
+
+test(s6_trace_source_shows_exit) :-
+    with_output_to(string(Out),
+        hs_trace_source("put 42 into N")),
+    sub_string(Out, _, _, _, "EXIT").
+
+test(s6_trace_source_shows_halt) :-
+    with_output_to(string(Out),
+        hs_trace_source("put 1 into X")),
+    sub_string(Out, _, _, _, "halt").
+
+% Variable bindings on EXIT -------------------------------------------
+
+test(s6_trace_source_shows_new_binding) :-
+    with_output_to(string(Out),
+        hs_trace_source("put \"Hello\" into X")),
+    sub_string(Out, _, _, _, "X").
+
+test(s6_trace_source_exit_shows_var_value) :-
+    with_output_to(string(Out),
+        hs_trace_source("put 99 into N")),
+    ( sub_string(Out, _, _, _, "N = 99")
+    ; sub_string(Out, _, _, _, "[bindings] N = 99")
+    ).
+
+test(s6_trace_source_final_bindings) :-
+    with_output_to(string(Out),
+        hs_trace_source("put \"Hello\" into X")),
+    sub_string(Out, _, _, _, "[bindings]").
+
+% IO events -----------------------------------------------------------
+
+test(s6_trace_source_io_write_event) :-
+    with_output_to(string(Out),
+        hs_trace_source("write \"test\"")),
+    sub_string(Out, _, _, _, "IO").
+
+test(s6_trace_source_io_write_shows_value) :-
+    with_output_to(string(Out),
+        hs_trace_source("write \"hello\"")),
+    sub_string(Out, _, _, _, "IO write"),
+    sub_string(Out, _, _, _, "hello").
+
+test(s6_trace_source_io_write_variable) :-
+    with_output_to(string(Out),
+        hs_trace_source("put 42 into N\nwrite N")),
+    sub_string(Out, _, _, _, "IO write"),
+    sub_string(Out, _, _, _, "42").
+
+% Readable CALL format ------------------------------------------------
+
+test(s6_trace_call_contains_put) :-
+    with_output_to(string(Out),
+        hs_trace_source("put 1 into X")),
+    sub_string(Out, _, _, _, "put").
+
+test(s6_trace_call_contains_write) :-
+    with_output_to(string(Out),
+        hs_trace_source("write hello")),
+    sub_string(Out, _, _, _, "write").
+
+% FAIL path -----------------------------------------------------------
+
+test(s6_trace_source_does_not_throw) :-
+    % Ensure tracing completes without throwing for a simple program
+    with_output_to(string(_Out),
+        hs_trace_source("put 1 into X")).
+
+test(s6_trace_source_fail_produces_fail_event) :-
+    % A call to fail/0 should produce a FAIL trace event
+    with_output_to(string(Out),
+        hs_trace_source("fail")),
+    sub_string(Out, _, _, _, "FAIL").
+
+% Repeat loop tracing -------------------------------------------------
+
+test(s6_trace_source_repeat_shows_multiple_calls) :-
+    with_output_to(string(Out),
+        hs_trace_source("repeat with I from 1 to 3\nwrite I\nend repeat")),
+    sub_string(Out, _, _, _, "CALL"),
+    sub_string(Out, _, _, _, "IO write").
+
+% hs_trace_file/1 -----------------------------------------------------
+
+test(s6_trace_file_traces_file, [setup(setup_trace_file(F)),
+                                  cleanup(delete_file(F))]) :-
+    with_output_to(string(Out), hs_trace_file(F)),
+    sub_string(Out, _, _, _, "CALL"),
+    sub_string(Out, _, _, _, "[line 1]").
+
+setup_trace_file(File) :-
+    tmp_file(hs_trace_test, File),
+    open(File, write, S),
+    write(S, "put 7 into X\n"),
+    close(S).
+
+% hs_trace_query/1 ----------------------------------------------------
+
+test(s6_trace_query_shows_call) :-
+    with_output_to(string(Out),
+        hs_trace_query("put 5 into N")),
+    sub_string(Out, _, _, _, "CALL").
+
+test(s6_trace_query_shows_exit) :-
+    with_output_to(string(Out),
+        hs_trace_query("put 5 into N")),
+    sub_string(Out, _, _, _, "EXIT").
+
+test(s6_trace_query_shows_line_number) :-
+    with_output_to(string(Out),
+        hs_trace_query("put 5 into N")),
+    sub_string(Out, _, _, _, "[line 1]").
+
+:- end_tests(stage6_trace).
 
 % ---------------------------------------------------------------------------
 % Test runner entry point
