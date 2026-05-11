@@ -131,18 +131,31 @@ repl_continue_input(Acc, _Depth, Complete) :-
     ).
 
 %% repl_block_depth(+Input, -Depth)
-% Count unclosed block openers.  A repeat-with or if-then adds 1;
-% end-repeat or end-if subtracts 1.  Returns the net depth.
+% Compute the net nesting depth of block openers vs closers in Input.
+% Depth > 0 means the input has unclosed blocks and more input is needed.
+% Uses the tokeniser so that keywords inside string literals are not counted.
 repl_block_depth(Input, Depth) :-
-    split_string(Input, "\n", "", Lines),
-    foldl(count_block_depth, Lines, 0, Depth).
+    ( catch(hs_tokenise(Input, Tokens), _, Tokens = []) -> true ; Tokens = [] ),
+    tokens_depth(Tokens, 0, Depth).
 
-count_block_depth(Line, D0, D1) :-
-    (sub_string(Line, _, _, _, "repeat with ") -> Open1 = 1 ; Open1 = 0),
-    (sub_string(Line, _, _, _,  " then")        -> Open2 = 1 ; Open2 = 0),
-    (sub_string(Line, _, _, _, "end repeat")    -> Close1 = 1 ; Close1 = 0),
-    (sub_string(Line, _, _, _, "end if")        -> Close2 = 1 ; Close2 = 0),
-    D1 is D0 + Open1 + Open2 - Close1 - Close2.
+% tokens_depth(+Tokens, +AccDepth, -FinalDepth)
+% Walk the token list left-to-right, tracking open/close pairs.
+tokens_depth([], D, D).
+tokens_depth([kw(repeat), kw(with) | Rest], D0, D) :- !,
+    D1 is D0 + 1,
+    tokens_depth(Rest, D1, D).
+tokens_depth([kw(end), kw(repeat) | Rest], D0, D) :- !,
+    D1 is max(0, D0 - 1),
+    tokens_depth(Rest, D1, D).
+tokens_depth([kw('if') | Rest], D0, D) :-
+    memberchk(kw(then), Rest), !,
+    D1 is D0 + 1,
+    tokens_depth(Rest, D1, D).
+tokens_depth([kw(end), kw('if') | Rest], D0, D) :- !,
+    D1 is max(0, D0 - 1),
+    tokens_depth(Rest, D1, D).
+tokens_depth([_ | Rest], D0, D) :-
+    tokens_depth(Rest, D0, D).
 
 % ---------------------------------------------------------------------------
 % Top-level dispatch
