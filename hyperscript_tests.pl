@@ -1,6 +1,6 @@
 %% hyperscript_tests.pl
 %%
-%% Stage 1 + Stage 2 (WAM) + Stage 4 (REPL) tests for HyperScript.
+%% Stage 1 + Stage 2 (WAM) + Stage 4 (REPL) + Stage 5 (delete-char) tests.
 %%
 %% Run with:
 %%   swipl -q -s hyperscript_tests.pl -g run_tests -t halt
@@ -769,6 +769,165 @@ test(block_depth_closed_if) :-
     repl_block_depth("if X = 1 then write yes\nend if", 0).
 
 :- end_tests(stage4_repl).
+
+% ---------------------------------------------------------------------------
+% Stage 5 – Delete character support
+% ---------------------------------------------------------------------------
+%
+% Tests for hs_normalise_input/2 covering all required forms:
+%   • ASCII 8   (^H / Ctrl-H / Backspace)
+%   • ASCII 127 (DEL)
+%   • Visible two-character sequences ^H and ^? (terminal echo artefacts)
+%   • Unicode SYMBOL FOR BACKSPACE  U+2408
+%   • Unicode SYMBOL FOR DELETE     U+2421
+%   • The pr1.txt acceptance test: put "Hellp" <DEL> "o" into X → "Hello"
+%
+% ---------------------------------------------------------------------------
+
+:- begin_tests(stage5_delete_char).
+
+% --- ASCII backspace (8, Ctrl-H) ---
+
+test(s5_backspace_removes_prev) :-
+    % ASCII 8 removes the immediately preceding character
+    string_codes(Raw, [0'h, 0'e, 0'l, 0'l, 0'p, 8, 0'o]),
+    hs_normalise_input(Raw, Clean),
+    Clean == "hello".
+
+test(s5_ctrl_h_same_as_backspace) :-
+    % ASCII 8 (Ctrl-H) is identical to a standard backspace
+    string_codes(Raw, [0'a, 0'b, 8, 0'c]),
+    hs_normalise_input(Raw, Clean),
+    Clean == "ac".
+
+test(s5_backspace_at_start_is_noop) :-
+    % Backspace at the very beginning of the buffer is silently ignored
+    string_codes(Raw, [8, 0'h, 0'i]),
+    hs_normalise_input(Raw, Clean),
+    Clean == "hi".
+
+% --- ASCII DEL (127) ---
+
+test(s5_del_removes_prev) :-
+    % ASCII 127 (DEL) removes the immediately preceding character
+    string_codes(Raw, [0'h, 0'e, 0'l, 0'l, 0'p, 127, 0'o]),
+    hs_normalise_input(Raw, Clean),
+    Clean == "hello".
+
+test(s5_del_at_start_is_noop) :-
+    % DEL at the very beginning of the buffer is silently ignored
+    string_codes(Raw, [127, 0'h, 0'i]),
+    hs_normalise_input(Raw, Clean),
+    Clean == "hi".
+
+test(s5_multiple_dels_erase_multiple_chars) :-
+    % Two consecutive DELs erase two characters
+    string_codes(Raw, [0'h, 0'i, 127, 127]),
+    hs_normalise_input(Raw, Clean),
+    Clean == "".
+
+% --- Visible control sequences (terminal echo artefacts) ---
+
+test(s5_visible_caret_H_acts_as_backspace) :-
+    % The two-character sequence "^H" (0x5E 0x48) is a common terminal artefact
+    % for Ctrl-H and must be treated as a single backspace.
+    string_codes(Raw, [0'a, 0'b, 0'^, 0'H, 0'c]),
+    hs_normalise_input(Raw, Clean),
+    Clean == "ac".
+
+test(s5_visible_caret_question_acts_as_del) :-
+    % The two-character sequence "^?" (0x5E 0x3F) is the visible echo of DEL
+    % and must be treated as a single delete.
+    string_codes(Raw, [0'a, 0'b, 0'^, 0'?, 0'c]),
+    hs_normalise_input(Raw, Clean),
+    Clean == "ac".
+
+test(s5_visible_caret_H_at_start_is_noop) :-
+    % ^H at the start of the buffer deletes nothing
+    string_codes(Raw, [0'^, 0'H, 0'h, 0'i]),
+    hs_normalise_input(Raw, Clean),
+    Clean == "hi".
+
+test(s5_visible_caret_question_at_start_is_noop) :-
+    % ^? at the start of the buffer deletes nothing
+    string_codes(Raw, [0'^, 0'?, 0'h, 0'i]),
+    hs_normalise_input(Raw, Clean),
+    Clean == "hi".
+
+% --- Unicode delete symbols ---
+
+test(s5_unicode_symbol_backspace_removes_prev) :-
+    % U+2408 SYMBOL FOR BACKSPACE (code point 9224) removes the preceding char
+    string_codes(Raw, [0'a, 0'b, 9224, 0'c]),
+    hs_normalise_input(Raw, Clean),
+    Clean == "ac".
+
+test(s5_unicode_symbol_delete_removes_prev) :-
+    % U+2421 SYMBOL FOR DELETE (code point 9249) removes the preceding char
+    string_codes(Raw, [0'a, 0'b, 9249, 0'c]),
+    hs_normalise_input(Raw, Clean),
+    Clean == "ac".
+
+test(s5_unicode_symbol_backspace_at_start_is_noop) :-
+    % U+2408 at the very start of the buffer is silently ignored
+    string_codes(Raw, [9224, 0'h, 0'i]),
+    hs_normalise_input(Raw, Clean),
+    Clean == "hi".
+
+test(s5_unicode_symbol_delete_at_start_is_noop) :-
+    % U+2421 at the very start of the buffer is silently ignored
+    string_codes(Raw, [9249, 0'h, 0'i]),
+    hs_normalise_input(Raw, Clean),
+    Clean == "hi".
+
+% --- Mixed forms ---
+
+test(s5_mixed_ascii_and_unicode_deletes) :-
+    % Mix ASCII 127 and U+2421 – both must erase one character each
+    string_codes(Raw, [0'a, 0'b, 0'c, 127, 9249]),
+    hs_normalise_input(Raw, Clean),
+    Clean == "a".
+
+test(s5_mixed_backspace_and_visible_caret_H) :-
+    % Mix ASCII 8 and visible ^H – both must erase one character each
+    string_codes(Raw, [0'a, 0'b, 8, 0'c, 0'^, 0'H, 0'd]),
+    hs_normalise_input(Raw, Clean),
+    Clean == "ad".
+
+% --- pr1.txt acceptance test ---
+
+test(s5_acceptance_put_hellp_del_o) :-
+    % pr1.txt stage-5 acceptance test:
+    %   Typing  put "Hellp" <DEL> "o" into X  must yield  put "Hello" into X
+    % which the parser then evaluates to  X = "Hello".
+    string_codes(Raw, [0'p, 0'u, 0't, 0' ,
+                       0'", 0'H, 0'e, 0'l, 0'l, 0'p, 127, 0'o, 0'",
+                       0' , 0'i, 0'n, 0't, 0'o, 0' , 0'X]),
+    hs_normalise_input(Raw, Clean),
+    Clean == "put \"Hello\" into X".
+
+test(s5_acceptance_executes_correctly) :-
+    % End-to-end: normalise the raw input then execute it; X must be "Hello"
+    string_codes(Raw, [0'p, 0'u, 0't, 0' ,
+                       0'", 0'H, 0'e, 0'l, 0'l, 0'p, 127, 0'o, 0'",
+                       0' , 0'i, 0'n, 0't, 0'o, 0' , 0'X]),
+    hs_normalise_input(Raw, Clean),
+    hs_tokenise(Clean, Tokens),
+    hs_parse(Tokens, Stmts),
+    hs_execute(Stmts, [], Env),
+    memberchk('X'-"Hello", Env).
+
+% --- No-op cases ---
+
+test(s5_no_deletes_string_unchanged) :-
+    hs_normalise_input("hello world", Clean),
+    Clean == "hello world".
+
+test(s5_empty_string_unchanged) :-
+    hs_normalise_input("", Clean),
+    Clean == "".
+
+:- end_tests(stage5_delete_char).
 
 % ---------------------------------------------------------------------------
 % Test runner entry point
