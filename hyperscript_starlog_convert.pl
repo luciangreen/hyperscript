@@ -43,7 +43,7 @@ starlog_to_hs(StarlogSource, Options, HyperScriptSource) :-
 starlog_to_hs_impl(StarlogSource, Options, HyperScriptSource) :-
     hs_option(style, Options, nested, Style0),
     normalise_style(Style0, Style),
-    hs_option(preserve_comments, Options, true, PreserveComments),
+    hs_option(preserve_comments, Options, false, PreserveComments),
     hs_option(trace, Options, false, Trace),
     split_string(StarlogSource, "\n", "", RawLines),
     maplist(string_trim, RawLines, Trimmed),
@@ -95,11 +95,11 @@ hs_stmt_to_starlog_line(_Style, ask(Prompt, Var), Line) :- !,
 hs_stmt_to_starlog_line(_, if(_, _, _), _) :-
     throw(error(unsupported_conversion(if),
                 context(hs_to_starlog/3,
-                        "if/then/else conversion is not supported because this converter currently handles linear single-statement mappings only"))).
+                        "if/then/else conversion is not supported; this converter only handles direct statement-to-clause mappings"))).
 hs_stmt_to_starlog_line(_, repeat_with(_, _, _, _), _) :-
     throw(error(unsupported_conversion(repeat),
                 context(hs_to_starlog/3,
-                        "repeat conversion is not supported because loop blocks are not yet lowered into equivalent Starlog clauses"))).
+                        "repeat loop conversion is not supported because there is no equivalent Starlog form implemented yet"))).
 
 hs_put_expr_to_nested_line(concat(A, B), Var, Line) :- !,
     hs_concat_predicate(A, B, Pred),
