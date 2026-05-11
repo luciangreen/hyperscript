@@ -1046,10 +1046,16 @@ test(s6_trace_call_contains_write) :-
 
 % FAIL path -----------------------------------------------------------
 
-test(s6_trace_source_fail_keyword) :-
+test(s6_trace_source_does_not_throw) :-
+    % Ensure tracing completes without throwing for a simple program
     with_output_to(string(_Out),
-        hs_trace_source("put 1 into X")),
-    true.   % just ensure it doesn't throw
+        hs_trace_source("put 1 into X")).
+
+test(s6_trace_source_fail_produces_fail_event) :-
+    % A call to fail/0 should produce a FAIL trace event
+    with_output_to(string(Out),
+        hs_trace_source("fail")),
+    sub_string(Out, _, _, _, "FAIL").
 
 % Repeat loop tracing -------------------------------------------------
 

@@ -648,10 +648,10 @@ hs_trace_run(State0) :-
 % ===========================================================================
 
 %% hs_set_trace(+OnOrOff)
-% Set the global trace flag (on or off).  When on, hs_run/1 and hs_run_file/1
-% will automatically emit trace output.
+% Set the global trace flag (on or off).
+% Query hs_trace_enabled/1 to read the current state; defaults to off when
+% no fact exists (i.e. before the first hs_set_trace/1 call).
 :- dynamic hs_trace_enabled/1.
-hs_trace_enabled(off).
 
 hs_set_trace(OnOrOff) :-
     retractall(hs_trace_enabled(_)),
@@ -743,7 +743,11 @@ hs_trace_run_s6(State0, _) :-
     % Pre-announce I/O for write and ask instructions
     wam_env_to_hs(Env0, H0, HsEnv0),
     ( Op = hs_write(WriteExpr) ->
-        ( catch(hs_eval(WriteExpr, HsEnv0, WriteVal), _, WriteVal = '?')
+        ( catch(hs_eval(WriteExpr, HsEnv0, WriteVal),
+                EvalErr,
+                (WriteVal = '?',
+                 format("[line ~w] ERROR evaluating write arg: ~w~n",
+                        [Line, EvalErr])))
         -> format("[line ~w] IO write(~w)~n", [Line, WriteVal])
         ;  format("[line ~w] IO write(?)~n", [Line])
         )
