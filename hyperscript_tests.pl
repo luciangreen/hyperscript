@@ -1,7 +1,7 @@
 %% hyperscript_tests.pl
 %%
 %% Stage 1 + Stage 2 (WAM) + Stage 4 (REPL) + Stage 5 (delete-char)
-%% + Stage 6 (line-aware tracing) tests.
+%% + Stage 6 (line-aware tracing) + Stage 7 (error detection) tests.
 %%
 %% Run with:
 %%   swipl -q -s hyperscript_tests.pl -g run_tests -t halt
@@ -11,6 +11,7 @@
 :- use_module(hyperscript_wam).
 :- use_module(hyperscript_prelude).
 :- use_module(hyperscript_repl).
+:- use_module(hyperscript_errors).
 
 % ---------------------------------------------------------------------------
 % Tokeniser tests
@@ -1097,6 +1098,231 @@ test(s6_trace_query_shows_line_number) :-
     sub_string(Out, _, _, _, "[line 1]").
 
 :- end_tests(stage6_trace).
+
+% ---------------------------------------------------------------------------
+% Stage 7 – Error detection
+% ---------------------------------------------------------------------------
+%
+% Tests for:
+%   hs_check_source(+Source, -Errors)   – detect errors in source
+%   hs_check_tokens(+Tokens, -Errors)   – detect token-level errors
+%   hs_check_ast(+AST, -Errors)         – detect AST-level errors
+%   hs_print_error(+Error)              – pretty-print a single error
+%   hs_format_error(+Error, -Str)       – format error as string
+%   hs_runtime_error(+PrologErr, -Err)  – wrap a caught Prolog error
+%
+% Error term:  hs_error(Type, Msg, File, Line, Col, Source, Hint)
+% ---------------------------------------------------------------------------
+
+:- begin_tests(stage7_errors).
+
+% ---------------------------------------------------------------------------
+% hs_print_error / hs_format_error
+% ---------------------------------------------------------------------------
+
+test(s7_print_error_contains_type, [true]) :-
+    Err = hs_error(syntax_error, "test message", '', 0, 0, '', ''),
+    with_output_to(string(Out), hs_print_error(Err)),
+    sub_string(Out, _, _, _, "syntax_error").
+
+test(s7_print_error_contains_message, [true]) :-
+    Err = hs_error(type_error, "bad type here", '', 0, 0, '', ''),
+    with_output_to(string(Out), hs_print_error(Err)),
+    sub_string(Out, _, _, _, "bad type here").
+
+test(s7_print_error_shows_hint, [true]) :-
+    Err = hs_error(missing_then, "msg", '', 3, 0, '', "add then"),
+    with_output_to(string(Out), hs_print_error(Err)),
+    sub_string(Out, _, _, _, "add then").
+
+test(s7_print_error_shows_line, [true]) :-
+    Err = hs_error(syntax_error, "msg", '', 5, 0, '', ''),
+    with_output_to(string(Out), hs_print_error(Err)),
+    sub_string(Out, _, _, _, "5").
+
+test(s7_print_error_shows_file, [true]) :-
+    Err = hs_error(syntax_error, "msg", 'test.hspl', 1, 0, '', ''),
+    with_output_to(string(Out), hs_print_error(Err)),
+    sub_string(Out, _, _, _, "test.hspl").
+
+test(s7_format_error_returns_string, [true]) :-
+    Err = hs_error(domain_error, "bad value", '', 0, 0, '', ''),
+    hs_format_error(Err, Str),
+    string(Str),
+    sub_string(Str, _, _, _, "domain_error").
+
+% ---------------------------------------------------------------------------
+% hs_check_source – clean source produces no errors
+% ---------------------------------------------------------------------------
+
+test(s7_clean_source_no_errors) :-
+    hs_check_source("put 42 into N", Errors),
+    Errors == [].
+
+test(s7_clean_multiline_no_errors) :-
+    hs_check_source("put 1 into X\nwrite X", Errors),
+    Errors == [].
+
+test(s7_clean_if_no_errors) :-
+    hs_check_source("if X = 1 then write ok end if", Errors),
+    Errors == [].
+
+test(s7_clean_repeat_no_errors) :-
+    hs_check_source("repeat with I from 1 to 3\nwrite I\nend repeat", Errors),
+    Errors == [].
+
+% ---------------------------------------------------------------------------
+% hs_check_source – unterminated string detection
+% ---------------------------------------------------------------------------
+
+test(s7_unterminated_string_detected, [true]) :-
+    hs_check_source("put \"hello into X", Errors),
+    Errors \= [],
+    Errors = [hs_error(Type, _, _, _, _, _, _)|_],
+    Type == unterminated_string.
+
+test(s7_terminated_string_no_error) :-
+    hs_check_source("put \"hello\" into X", Errors),
+    Errors == [].
+
+% ---------------------------------------------------------------------------
+% hs_check_source – missing structural tokens
+% ---------------------------------------------------------------------------
+
+test(s7_missing_end_repeat_detected, [true]) :-
+    hs_check_source("repeat with I from 1 to 3\nwrite I", Errors),
+    Errors \= [],
+    member(hs_error(missing_end_repeat, _, _, _, _, _, _), Errors).
+
+test(s7_closed_repeat_no_error) :-
+    hs_check_source("repeat with I from 1 to 3\nwrite I\nend repeat", Errors),
+    Errors == [].
+
+% ---------------------------------------------------------------------------
+% hs_check_ast – unknown predicate detection
+% ---------------------------------------------------------------------------
+
+test(s7_unknown_predicate_in_call, [true]) :-
+    hs_tokenise("blarg_xyz(1,2,3)", Tokens),
+    hs_parse(Tokens, AST),
+    hs_check_ast(AST, Errors),
+    Errors \= [],
+    member(hs_error(unknown_predicate, _, _, _, _, _, _), Errors).
+
+test(s7_known_predicate_no_error) :-
+    hs_tokenise("member(X, [a,b])", Tokens),
+    hs_parse(Tokens, AST),
+    hs_check_ast(AST, Errors),
+    \+ member(hs_error(unknown_predicate, _, _, _, _, _, _), Errors).
+
+% ---------------------------------------------------------------------------
+% hs_check_ast – singleton variable detection
+% ---------------------------------------------------------------------------
+
+test(s7_singleton_variable_detected, [true]) :-
+    % X appears only once → singleton
+    hs_tokenise("put 1 into Y\nwrite Y", Tokens),
+    hs_parse(Tokens, AST),
+    hs_check_singletons(AST, Errors),
+    % Y is used twice (in put and write), so no singleton here
+    Errors == [].
+
+test(s7_singleton_single_occurrence, [true]) :-
+    % OnlyOnce is used only in the put, so it is a singleton
+    hs_tokenise("put OnlyOnce into Y", Tokens),
+    hs_parse(Tokens, AST),
+    hs_check_singletons(AST, Errors),
+    Errors \= [],
+    member(hs_error(singleton_variable, _, _, _, _, _, _), Errors).
+
+test(s7_underscore_prefix_not_singleton) :-
+    % _Ignored is intentionally unused; must NOT produce a singleton warning
+    hs_tokenise("put 1 into _Ignored", Tokens),
+    hs_parse(Tokens, AST),
+    hs_check_singletons(AST, Errors),
+    \+ member(hs_error(singleton_variable, _, _, _, _, _, _), Errors).
+
+% ---------------------------------------------------------------------------
+% hs_runtime_error – wrapping caught Prolog errors
+% ---------------------------------------------------------------------------
+
+test(s7_runtime_instantiation_error, [true]) :-
+    hs_runtime_error(error(instantiation_error, context(_, _)),
+                     hs_error(instantiation_error, _, _, _, _, _, _)).
+
+test(s7_runtime_type_error_evaluable, [true]) :-
+    hs_runtime_error(error(type_error(evaluable, foo/0), _),
+                     hs_error(unbound_variable, _, _, _, _, _, _)).
+
+test(s7_runtime_type_error_general, [true]) :-
+    hs_runtime_error(error(type_error(integer, foo), _),
+                     hs_error(type_error, _, _, _, _, _, _)).
+
+test(s7_runtime_domain_error, [true]) :-
+    hs_runtime_error(error(domain_error(not_less_than_zero, -1), _),
+                     hs_error(domain_error, _, _, _, _, _, _)).
+
+test(s7_runtime_permission_error, [true]) :-
+    hs_runtime_error(error(permission_error(modify, static_procedure, foo/1), _),
+                     hs_error(permission_error, _, _, _, _, _, _)).
+
+test(s7_runtime_existence_error, [true]) :-
+    hs_runtime_error(error(existence_error(procedure, bar/2), _),
+                     hs_error(unknown_predicate, _, _, _, _, _, _)).
+
+test(s7_runtime_hs_unbound, [true]) :-
+    hs_runtime_error(hs_error(unbound_variable, "Unbound variable: X"),
+                     hs_error(unbound_variable, _, _, _, _, _, _)).
+
+test(s7_runtime_unknown_wraps_generic, [true]) :-
+    hs_runtime_error(some_unknown_error,
+                     hs_error(runtime_error, _, _, _, _, _, _)).
+
+% ---------------------------------------------------------------------------
+% hs_conversion_error
+% ---------------------------------------------------------------------------
+
+test(s7_conversion_error_to_starlog, [true]) :-
+    hs_conversion_error(to_starlog, "unsupported construct",
+                        hs_error(conversion_error_to, _, _, _, _, _, _)).
+
+test(s7_conversion_error_from_starlog, [true]) :-
+    hs_conversion_error(from_starlog, "invalid token",
+                        hs_error(conversion_error_from, _, _, _, _, _, _)).
+
+% ---------------------------------------------------------------------------
+% hs_check_ast – invalid assignment target
+% ---------------------------------------------------------------------------
+
+test(s7_invalid_assignment_number_target, [true]) :-
+    % Manually construct an AST with a non-atom assignment target
+    AST = [put(num(1), 42)],   % 42 is not an atom variable name
+    hs_check_ast(AST, Errors),
+    Errors \= [],
+    member(hs_error(invalid_assignment, _, _, _, _, _, _), Errors).
+
+test(s7_valid_assignment_atom_target) :-
+    AST = [put(num(1), 'MyVar')],
+    hs_check_ast(AST, Errors),
+    \+ member(hs_error(invalid_assignment, _, _, _, _, _, _), Errors).
+
+% ---------------------------------------------------------------------------
+% hs_check_source – complete round-trip (no errors for valid programs)
+% ---------------------------------------------------------------------------
+
+test(s7_roundtrip_arithmetic_no_errors) :-
+    hs_check_source("put 3 + 4 into N", Errors),
+    Errors == [].
+
+test(s7_roundtrip_list_no_errors) :-
+    hs_check_source("put [1,2,3] into L", Errors),
+    Errors == [].
+
+test(s7_roundtrip_method_chain_no_errors) :-
+    hs_check_source("put X >> reverse into N", Errors),
+    \+ member(hs_error(malformed_chain, _, _, _, _, _, _), Errors).
+
+:- end_tests(stage7_errors).
 
 % ---------------------------------------------------------------------------
 % Test runner entry point
