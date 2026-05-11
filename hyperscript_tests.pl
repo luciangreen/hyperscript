@@ -1390,13 +1390,11 @@ cleanup_temp_files([File|Rest]) :-
     cleanup_temp_files(Rest).
 
 with_temp_conversion_files(Source, Goal) :-
-    tmp_file(hs_stage9, InFile),
-    tmp_file(hs_stage9, OutFile),
-    setup_call_cleanup(
-        open(InFile, write, InStream, [encoding(utf8)]),
-        write(InStream, Source),
-        close(InStream)
-    ),
+    tmp_file_stream(text, InFile, InStream),
+    tmp_file_stream(text, OutFile, OutStream),
+    write(InStream, Source),
+    close(InStream),
+    close(OutStream),
     call_cleanup(
         call(Goal, InFile, OutFile),
         cleanup_temp_files([InFile, OutFile])
@@ -1404,34 +1402,48 @@ with_temp_conversion_files(Source, Goal) :-
 
 :- begin_tests(stage9_convert_option).
 
-test(s9_hs_convert_to_starlog_method_chain, [true]) :-
+test(s9_hs_convert_to_starlog_method_chain,
+     [true(Out == "starlog_call(X is \"Hello\":\"World\").\nstarlog_call(N is string_length(X)).")]) :-
     Source = "put \"Hello\" & \"World\" into X\nput string_length(X) into N",
     with_temp_conversion_files(Source,
         {}/[InFile, OutFile]>>(
-            hs_convert(InFile, OutFile, [to(starlog), compressed(true), style(method_chain)]),
-            read_file_to_string(OutFile, Out, []),
-            sub_string(Out, _, _, _, "starlog_call(X is \"Hello\":\"World\")."),
-            sub_string(Out, _, _, _, "starlog_call(N is string_length(X)).")
+            hs_convert(InFile, OutFile, [to(starlog), style(method_chain)]),
+            read_file_to_string(OutFile, Out, [])
         )).
 
-test(s9_hs_convert_to_starlog_nested, [true]) :-
+test(s9_hs_convert_to_starlog_nested,
+     [true(Out == "string_concat(\"Hello\",\"World\",X).\nstring_length(X,N).")]) :-
     Source = "put \"Hello\" & \"World\" into X\nput string_length(X) into N",
     with_temp_conversion_files(Source,
         {}/[InFile, OutFile]>>(
-            hs_convert(InFile, OutFile, [to(starlog), compressed(true), style(nested)]),
-            read_file_to_string(OutFile, Out, []),
-            sub_string(Out, _, _, _, "string_concat(\"Hello\",\"World\",X)."),
-            sub_string(Out, _, _, _, "string_length(X,N).")
+            hs_convert(InFile, OutFile, [to(starlog), style(nested)]),
+            read_file_to_string(OutFile, Out, [])
         )).
 
-test(s9_hs_convert_from_starlog, [true]) :-
+test(s9_hs_convert_from_starlog,
+     [true(Out == "put \"Hello\" & \"World\" into X\nput string_length(X) into N")]) :-
     Source = "string_concat(\"Hello\",\"World\",X).\nstring_length(X,N).",
     with_temp_conversion_files(Source,
         {}/[InFile, OutFile]>>(
             hs_convert(InFile, OutFile, [from(starlog), style(method_chain)]),
-            read_file_to_string(OutFile, Out, []),
-            sub_string(Out, _, _, _, "put \"Hello\" & \"World\" into X"),
-            sub_string(Out, _, _, _, "put string_length(X) into N")
+            read_file_to_string(OutFile, Out, [])
+        )).
+
+test(s9_hs_convert_defaults_to_to_starlog,
+     [true(Out == "starlog_call(X is \"Hello\":\"World\").")]) :-
+    Source = "put \"Hello\" & \"World\" into X",
+    with_temp_conversion_files(Source,
+        {}/[InFile, OutFile]>>(
+            hs_convert(InFile, OutFile, [style(method_chain)]),
+            read_file_to_string(OutFile, Out, [])
+        )).
+
+test(s9_hs_convert_rejects_ambiguous_direction,
+     [throws(error(ambiguous_conversion_direction, _))]) :-
+    Source = "put 1 into X",
+    with_temp_conversion_files(Source,
+        {}/[InFile, OutFile]>>(
+            hs_convert(InFile, OutFile, [to(starlog), from(starlog), style(method_chain)])
         )).
 
 :- end_tests(stage9_convert_option).

@@ -29,6 +29,12 @@ hs_convert(InputFile, OutputFile, Options) :-
         )
     ).
 
+hs_convert_direction(Options, _) :-
+    memberchk(to(starlog), Options),
+    memberchk(from(starlog), Options), !,
+    throw(error(ambiguous_conversion_direction,
+                context(hs_convert/3,
+                        "options cannot include both to(starlog) and from(starlog)"))).
 hs_convert_direction(Options, to_starlog) :-
     memberchk(to(starlog), Options), !.
 hs_convert_direction(Options, from_starlog) :-

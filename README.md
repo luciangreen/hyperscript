@@ -127,9 +127,9 @@ Use `hs_convert/3` to convert files while selecting method-chain or nested style
 
 ```prolog
 ?- hs_convert("in.hspl", "out.starlog",
-              [to(starlog), compressed(true), style(method_chain)]).
+              [to(starlog), style(method_chain)]).
 ?- hs_convert("in.hspl", "out.starlog",
-              [to(starlog), compressed(true), style(nested)]).
+              [to(starlog), style(nested)]).
 ?- hs_convert("in.starlog", "out.hspl",
               [from(starlog), style(method_chain)]).
 ```
