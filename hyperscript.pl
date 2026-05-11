@@ -25,6 +25,7 @@
 ]).
 
 :- use_module(hyperscript_parser).
+:- use_module(hyperscript_prelude, [hs_prelude_call/2, hs_prelude_eval_call/3]).
 
 :- discontiguous hs_eval/3.
 
@@ -113,8 +114,7 @@ hs_exec_one(repeat_with(Var, FromExpr, ToExpr, Body), Env0, EnvOut) :-
 % Generic predicate call: call(F, Args)
 hs_exec_one(call(F, ArgExprs), Env0, Env0) :-
     maplist(hs_eval_arg(Env0), ArgExprs, Args),
-    Goal =.. [F|Args],
-    call(Goal).
+    hs_prelude_call(F, Args).
 
 hs_eval_arg(Env, Expr, Val) :- hs_eval(Expr, Env, Val).
 
@@ -147,12 +147,9 @@ hs_eval_cond(call(false, []), _) :- !, fail.
 hs_eval_cond(call(F, ArgExprs), Env) :-
     ArgExprs \= [],
     maplist(hs_eval_arg(Env), ArgExprs, Args),
-    Goal =.. [F|Args],
-    call(Goal).
+    hs_prelude_call(F, Args).
 hs_eval_cond(call(F, []), _Env) :-
-    atom(F),
-    Goal =.. [F],
-    call(Goal).
+    hs_prelude_call(F, []).
 
 hs_apply_cond('=',    A, B) :- A = B.
 hs_apply_cond('\\=',  A, B) :- A \= B.
@@ -218,13 +215,7 @@ hs_eval(call(is, [LExpr, RExpr]), Env, Val) :- !,
     hs_eval(LExpr, Env, Val).   % bind if LExpr is a var name string – handled
 hs_eval(call(F, ArgExprs), Env, Val) :-
     maplist(hs_eval_arg(Env), ArgExprs, Args),
-    Goal =.. [F, Val|Args],
-    call(Goal), !.
-hs_eval(call(F, ArgExprs), Env, Val) :-
-    maplist(hs_eval_arg(Env), ArgExprs, Args),
-    Goal =.. [F|Args],
-    call(Goal), !,
-    Val = true.
+    hs_prelude_eval_call(F, Args, Val).
 
 % method name as atom (0-arg method) – handled by the hs_eval(atom(A),_,A) clause above.
 

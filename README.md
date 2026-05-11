@@ -66,6 +66,30 @@ end if
 
 ---
 
+## Stage 3 – Basic Prolog prelude
+
+HyperScript now includes a stage-3 prelude module (`hyperscript_prelude.pl`) and
+routes generic calls through it.
+
+Supported categories include:
+- unification/control (`=`, `\\=`, `==`, `\\==`, `var/1`, `nonvar/1`, `ground/1`, `once/1`, `call/1`, `not/1`, `\\+/1`)
+- arithmetic predicates (`is/2`, `=:=/2`, `=\\=/2`, `>/2`, `</2`, `>=/2`, `=</2`)
+- list predicates (`member/2`, `append/3`, `length/2`, `reverse/2`, `nth0/3`, `nth1/3`, `select/3`, `last/2`, `flatten/2`)
+- term predicates (`functor/3`, `arg/3`, `=../2`, `copy_term/2`, `term_variables/2`)
+- atom/string/number predicates (`atom/1`, `string/1`, `number/1`, `atom_string/2`, `number_string/2`, `atom_concat/3`, `string_concat/3`)
+- I/O and dynamic database predicates (`write/1`, `writeln/1`, `nl/0`, `assertz/1`, `asserta/1`, `retract/1`, `retractall/1`, `clause/2`, `current_predicate/1`)
+
+Expression-call evaluation now supports result-last style automatically, e.g.:
+
+```prolog
+put length([a,b,c]) into N
+put atom_concat('hello','world') into A
+put number_string(42) into S
+put abs(-5) into V
+```
+
+---
+
 ## Running HyperScript files
 
 ```sh
