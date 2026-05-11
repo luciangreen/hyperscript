@@ -1330,13 +1330,10 @@ test(s7_roundtrip_method_chain_no_errors) :-
 
 :- begin_tests(stage8_conversion).
 
-test(s8_to_starlog_method_chain_concat, [true]) :-
+test(s8_to_starlog_method_chain_concat, [true(Starlog == "starlog_call(X is \"Hello\":\"World\").")]) :-
     hs_to_starlog("put \"Hello\" & \"World\" into X",
                   [compressed(true), style(method_chain)],
-                  Starlog),
-    sub_string(Starlog, _, _, _, "starlog_call("),
-    sub_string(Starlog, _, _, _, "X is"),
-    sub_string(Starlog, _, _, _, ":").
+                  Starlog).
 
 test(s8_to_starlog_nested_concat, [true]) :-
     hs_to_starlog("put \"Hello\" & \"World\" into X",

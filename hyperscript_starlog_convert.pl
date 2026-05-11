@@ -21,6 +21,8 @@ hs_to_starlog_impl(HyperScriptSource, Options, StarlogSource) :-
     hs_option(style, Options, nested, Style0),
     normalise_style(Style0, Style),
     hs_option(preserve_comments, Options, false, PreserveComments),
+    % Accepted for API compatibility in stage 8; current conversion is always
+    % emitted in compact single-line form per statement.
     hs_option(compressed, Options, true, _Compressed),
     hs_option(trace, Options, false, _Trace),
     hs_tokenise(HyperScriptSource, Tokens),
@@ -43,6 +45,7 @@ starlog_to_hs_impl(StarlogSource, Options, HyperScriptSource) :-
     hs_option(style, Options, nested, Style0),
     normalise_style(Style0, Style),
     hs_option(preserve_comments, Options, true, PreserveComments),
+    % Accepted for API compatibility in stage 8.
     hs_option(compressed, Options, true, _Compressed),
     hs_option(trace, Options, false, _Trace),
     split_string(StarlogSource, "\n", "", RawLines),
@@ -91,14 +94,15 @@ hs_stmt_to_starlog_line(_Style, ask(Prompt, Var), Line) :- !,
     hs_expr_to_starlog_method(Prompt, PromptText),
     format(string(Line), "ask(~w,~w).", [PromptText, Var]).
 hs_stmt_to_starlog_line(_, if(_, _, _), _) :-
-    throw(unsupported_if_conversion).
+    throw(error(unsupported_conversion(if), context(hs_to_starlog/3, "if/then/else conversion is not supported yet"))).
 hs_stmt_to_starlog_line(_, repeat_with(_, _, _, _), _) :-
-    throw(unsupported_repeat_conversion).
+    throw(error(unsupported_conversion(repeat), context(hs_to_starlog/3, "repeat conversion is not supported yet"))).
 
 hs_put_expr_to_nested_line(concat(A, B), Var, Line) :- !,
+    hs_concat_predicate(A, B, Pred),
     hs_expr_to_starlog_method(A, AT),
     hs_expr_to_starlog_method(B, BT),
-    format(string(Line), "string_concat(~w,~w,~w).", [AT, BT, Var]).
+    format(string(Line), "~w(~w,~w,~w).", [Pred, AT, BT, Var]).
 hs_put_expr_to_nested_line(method_chain(Input, atom(Method)), Var, Line) :- !,
     hs_expr_to_starlog_method(Input, InputT),
     format(string(Line), "~w(~w,~w).", [Method, InputT, Var]).
@@ -160,6 +164,15 @@ hs_method_to_text(call(Name, Args), T) :-
     atomic_list_concat(ArgTs, ",", ArgStr),
     format(string(T), "~w(~w)", [Name, ArgStr]).
 
+hs_concat_predicate(E1, E2, append) :-
+    hs_list_like_expr(E1),
+    hs_list_like_expr(E2), !.
+hs_concat_predicate(atom(_), atom(_), atom_concat) :- !.
+hs_concat_predicate(_, _, string_concat).
+
+hs_list_like_expr(list(_)).
+hs_list_like_expr(list_tail(_, _)).
+
 starlog_line_to_hs_line(_Style, PreserveComments, Line, Out) :-
     ( Line = ""
     -> Out = ""
@@ -170,7 +183,9 @@ starlog_line_to_hs_line(_Style, PreserveComments, Line, Out) :-
       -> true
       ; parse_starlog_nested_line(Core, Out)
       -> true
-      ; throw(cannot_parse_starlog_line(Core))
+      ; throw(error(cannot_parse_starlog_line(Core),
+                    context(starlog_to_hs/3,
+                            "line did not match supported method_chain or nested Starlog forms")))
       )
     ).
 
@@ -244,7 +259,10 @@ parse_starlog_nested_line(Line, HsLine) :-
     -> AtomLine = AtomLine0
     ; atom_concat(AtomLine0, '.', AtomLine)
     ),
-    read_term_from_atom(AtomLine, Term, [variable_names(VarNames)]),
+    catch(read_term_from_atom(AtomLine, Term, [variable_names(VarNames)]),
+          E,
+          throw(error(starlog_parse_error(Line, E),
+                      context(starlog_to_hs/3, "failed to parse Starlog line")))),
     term_to_hs_line(Term, VarNames, HsLine).
 
 term_to_hs_line(write(Arg), VNs, Line) :- !,
