@@ -28,6 +28,7 @@
     hs_compile/2,
     hs_run_bc/2,
     hs_query/2,
+    hs_query_env/3,
     hs_step/2,
     hs_trace/1,
     hs_compile_ast/2,
@@ -588,10 +589,16 @@ wam_run_to_done(State0, State2) :-
 % Compile Source and collect all solutions via the meta-interpreter.
 % Each solution is a list of Name-Value pairs.
 hs_query(Source, Solutions) :-
+    hs_query_env(Source, [], Solutions).
+
+%% hs_query_env(+Source, +InitEnv, -Solutions)
+% Like hs_query/2 but starts with InitEnv as the initial variable environment.
+% Allows a REPL to carry bindings across successive queries.
+hs_query_env(Source, InitEnv, Solutions) :-
     hs_tokenise(Source, Tokens),
     hs_parse(Tokens, Stmts),
     hs_compile_ast(Stmts, Bytecode),
-    findall(Env, wam_meta_exec(Bytecode, [], Env), Solutions).
+    findall(Env, wam_meta_exec(Bytecode, InitEnv, Env), Solutions).
 
 %% hs_trace(+Source)
 % Compile Source and execute step-by-step with trace output to stdout.

@@ -1,6 +1,6 @@
 %% hyperscript_tests.pl
 %%
-%% Stage 1 + Stage 2 (WAM) tests for HyperScript.
+%% Stage 1 + Stage 2 (WAM) + Stage 4 (REPL) tests for HyperScript.
 %%
 %% Run with:
 %%   swipl -q -s hyperscript_tests.pl -g run_tests -t halt
@@ -9,6 +9,7 @@
 :- use_module(hyperscript).
 :- use_module(hyperscript_wam).
 :- use_module(hyperscript_prelude).
+:- use_module(hyperscript_repl).
 
 % ---------------------------------------------------------------------------
 % Tokeniser tests
@@ -557,6 +558,217 @@ test(trace_shows_halt) :-
     sub_string(Out, _, _, _, "halt").
 
 :- end_tests(wam_trace).
+
+% ---------------------------------------------------------------------------
+% Stage 4 – REPL tests
+% ---------------------------------------------------------------------------
+
+:- begin_tests(stage4_repl).
+
+% --- hs_normalise_input / backspace-delete handling ---
+
+test(normalise_no_change) :-
+    hs_normalise_input("hello", Clean),
+    Clean == "hello".
+
+test(normalise_empty_string) :-
+    hs_normalise_input("", Clean),
+    Clean == "".
+
+test(normalise_backspace_removes_prev) :-
+    % ASCII 8 (^H / \b) removes the immediately preceding character
+    string_codes(Raw, [0'h, 0'e, 0'l, 0'l, 0'p, 8, 0'o]),
+    hs_normalise_input(Raw, Clean),
+    Clean == "hello".
+
+test(normalise_del_code_removes_prev) :-
+    % ASCII 127 (DEL) removes the immediately preceding character
+    string_codes(Raw, [0'h, 0'e, 0'l, 0'l, 0'p, 127, 0'o]),
+    hs_normalise_input(Raw, Clean),
+    Clean == "hello".
+
+test(normalise_multiple_deletes) :-
+    % Two consecutive DELs erase two characters
+    string_codes(Raw, [0'h, 0'i, 127, 127]),
+    hs_normalise_input(Raw, Clean),
+    Clean == "".
+
+test(normalise_delete_at_start_is_noop) :-
+    % Delete at the very start of the buffer is silently ignored
+    string_codes(Raw, [127, 0'h, 0'i]),
+    hs_normalise_input(Raw, Clean),
+    Clean == "hi".
+
+test(normalise_mixed_chars_and_deletes) :-
+    % put "Hellp" <DEL> "o" → "Hello"
+    string_codes(Raw, [0'p, 0'u, 0't, 0' ,
+                       0'", 0'H, 0'e, 0'l, 0'l, 0'p, 127, 0'o, 0'",
+                       0' , 0'i, 0'n, 0't, 0'o, 0' , 0'X]),
+    hs_normalise_input(Raw, Clean),
+    Clean == "put \"Hello\" into X".
+
+test(normalise_ctrl_h_same_as_backspace) :-
+    % Ctrl-H (ASCII 8) behaves identically to a regular backspace
+    string_codes(Raw, [0'a, 0'b, 8, 0'c]),
+    hs_normalise_input(Raw, Clean),
+    Clean == "ac".
+
+% --- hs_query_env : stateful environment passing ---
+
+test(query_env_empty_initial) :-
+    hs_query_env("put 99 into N", [], Solutions),
+    Solutions = [Env],
+    memberchk('N'-99, Env).
+
+test(query_env_inherits_binding) :-
+    % Pass an existing binding through the initial environment
+    hs_query_env("put X into Y", ['X'-42], Solutions),
+    Solutions = [Env],
+    memberchk('Y'-42, Env).
+
+test(query_env_member_with_initial_env) :-
+    % member/2 in a REPL with a pre-populated list variable
+    hs_query_env("member(E, L)", ['L'-[a,b,c]], Solutions),
+    length(Solutions, 3),
+    Solutions = [E1, E2, E3],
+    memberchk('E'-a, E1),
+    memberchk('E'-b, E2),
+    memberchk('E'-c, E3).
+
+% --- repl_print_solutions output format ---
+
+test(print_solutions_false_when_empty, [true(Out == "false.\n")]) :-
+    with_output_to(string(Out), repl_print_solutions([])).
+
+test(print_solutions_true_when_no_bindings, [true(Out == "true.\n")]) :-
+    with_output_to(string(Out), repl_print_solutions([[]])).
+
+test(print_solutions_single_binding, [true]) :-
+    with_output_to(string(Out),
+        repl_print_solutions([['X'-hello]])),
+    sub_string(Out, _, _, _, "X = hello"),
+    sub_string(Out, _, _, _, ".").
+
+test(print_solutions_multi_shows_semicolon, [true]) :-
+    with_output_to(string(Out),
+        repl_print_solutions([['X'-a], ['X'-b], ['X'-c]])),
+    sub_string(Out, _, _, _, "X = a"),
+    sub_string(Out, _, _, _, "X = b"),
+    sub_string(Out, _, _, _, "X = c"),
+    sub_string(Out, _, _, _, ";"),
+    sub_string(Out, _, _, _, "false.").
+
+test(print_solutions_two_vars_in_one_solution, [true]) :-
+    with_output_to(string(Out),
+        repl_print_solutions([['X'-1, 'Y'-2]])),
+    sub_string(Out, _, _, _, "X = 1"),
+    sub_string(Out, _, _, _, "Y = 2").
+
+% --- repl_format_bindings ---
+
+test(format_bindings_empty_is_noop) :-
+    with_output_to(string(Out), repl_format_bindings([])),
+    Out == "".
+
+test(format_bindings_one_pair, [true]) :-
+    with_output_to(string(Out), repl_format_bindings(['A'-99])),
+    sub_string(Out, _, _, _, "A = 99").
+
+% --- REPL command dispatch (non-interactive, unit-testable) ---
+
+test(repl_command_help_prints_help, [true]) :-
+    repl_init,
+    with_output_to(string(Out), repl_command(":help")),
+    sub_string(Out, _, _, _, ":quit"),
+    sub_string(Out, _, _, _, ":trace").
+
+test(repl_command_trace_on) :-
+    repl_init,
+    repl_command(":trace on"),
+    repl_get(trace, on).
+
+test(repl_command_trace_off) :-
+    repl_init,
+    repl_set(trace, on),
+    repl_command(":trace off"),
+    repl_get(trace, off).
+
+test(repl_command_clear_empties_env) :-
+    repl_init,
+    repl_set(env, ['X'-1]),
+    repl_command(":clear"),
+    repl_get(env, []).
+
+test(repl_command_starlog_method_chain) :-
+    repl_init,
+    repl_command(":starlog method_chain"),
+    repl_get(starlog_style, method_chain).
+
+test(repl_command_starlog_nested) :-
+    repl_init,
+    repl_command(":starlog nested"),
+    repl_get(starlog_style, nested).
+
+test(repl_command_starlog_compressed) :-
+    repl_init,
+    repl_command(":starlog compressed"),
+    repl_get(starlog_style, compressed).
+
+test(repl_env_shows_bindings, [true]) :-
+    repl_init,
+    repl_set(env, ['X'-hello]),
+    with_output_to(string(Out), repl_command(":env")),
+    sub_string(Out, _, _, _, "X = hello").
+
+% --- End-to-end dispatch via repl_dispatch ---
+
+test(dispatch_empty_line_is_noop) :-
+    repl_init,
+    repl_dispatch("").
+
+test(dispatch_put_updates_env) :-
+    repl_init,
+    repl_dispatch("put 7 into N"),
+    repl_get(env, Env),
+    memberchk('N'-7, Env).
+
+test(dispatch_write_produces_output, [true]) :-
+    repl_init,
+    with_output_to(string(Out),
+        repl_dispatch("write \"hello\"")),
+    sub_string(Out, _, _, _, "hello").
+
+test(dispatch_member_query, [true]) :-
+    repl_init,
+    with_output_to(string(Out),
+        repl_dispatch("member(X,[a,b,c])")),
+    sub_string(Out, _, _, _, "X = a"),
+    sub_string(Out, _, _, _, "X = b"),
+    sub_string(Out, _, _, _, "X = c"),
+    sub_string(Out, _, _, _, "false.").
+
+test(dispatch_fail_query, [true(Out == "false.\n")]) :-
+    repl_init,
+    with_output_to(string(Out), repl_dispatch("fail")).
+
+% --- Block depth detection ---
+
+test(block_depth_single_line_put) :-
+    repl_block_depth("put 1 into X", 0).
+
+test(block_depth_open_repeat) :-
+    repl_block_depth("repeat with I from 1 to 3", 1).
+
+test(block_depth_closed_repeat) :-
+    repl_block_depth("repeat with I from 1 to 3\nwrite I\nend repeat", 0).
+
+test(block_depth_open_if) :-
+    repl_block_depth("if X = 1 then write yes", 1).
+
+test(block_depth_closed_if) :-
+    repl_block_depth("if X = 1 then write yes\nend if", 0).
+
+:- end_tests(stage4_repl).
 
 % ---------------------------------------------------------------------------
 % Test runner entry point
