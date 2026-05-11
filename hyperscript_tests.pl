@@ -226,6 +226,34 @@ test(expr_call_abs_arithmetic) :-
     exec("put abs(-5) into N", Env),
     memberchk('N'-5, Env).
 
+test(expr_call_min_arithmetic) :-
+    exec("put min(10,3) into N", Env),
+    memberchk('N'-3, Env).
+
+test(expr_call_max_arithmetic) :-
+    exec("put max(10,3) into N", Env),
+    memberchk('N'-10, Env).
+
+test(expr_call_round_arithmetic) :-
+    exec("put round(3.6) into N", Env),
+    memberchk('N'-4, Env).
+
+test(expr_call_floor_arithmetic) :-
+    exec("put floor(3.6) into N", Env),
+    memberchk('N'-3, Env).
+
+test(expr_call_ceiling_arithmetic) :-
+    exec("put ceiling(3.1) into N", Env),
+    memberchk('N'-4, Env).
+
+test(expr_call_mod_arithmetic) :-
+    exec("put mod(10,3) into N", Env),
+    memberchk('N'-1, Env).
+
+test(expr_call_rem_arithmetic) :-
+    exec("put rem(10,3) into N", Env),
+    memberchk('N'-1, Env).
+
 test(query_append_backtracks_three_solutions) :-
     hs_query("append(X,Y,[a,b])", Solutions),
     length(Solutions, 3),

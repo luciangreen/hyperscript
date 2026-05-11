@@ -100,6 +100,9 @@ hs_prelude_eval_call(Functor, Args, Value) :-
 hs_prelude_eval_call(Functor, Args, true) :-
     hs_prelude_call(Functor, Args).
 
+% hs_prelude_eval_arith(+Functor, +Args, -Value)
+% Handles arithmetic built-ins that must be computed via is/2-style evaluation,
+% instead of by result-last/result-first predicate calling conventions.
 hs_prelude_eval_arith(abs, [A], Value) :- Value is abs(A).
 hs_prelude_eval_arith(min, [A, B], Value) :- Value is min(A, B).
 hs_prelude_eval_arith(max, [A, B], Value) :- Value is max(A, B).
