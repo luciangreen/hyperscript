@@ -1220,11 +1220,10 @@ test(s7_known_predicate_no_error) :-
 % ---------------------------------------------------------------------------
 
 test(s7_singleton_variable_detected, [true]) :-
-    % X appears only once → singleton
+    % Y is used twice (put + write), so no singleton warning expected
     hs_tokenise("put 1 into Y\nwrite Y", Tokens),
     hs_parse(Tokens, AST),
     hs_check_singletons(AST, Errors),
-    % Y is used twice (in put and write), so no singleton here
     Errors == [].
 
 test(s7_singleton_single_occurrence, [true]) :-

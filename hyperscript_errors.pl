@@ -60,8 +60,8 @@ hs_check_source(Source, Errors) :-
                   ASTErrors0 = [PErr] ))
         ->  ASTErrors0 = [],
             hs_check_ast(AST, AstErrors),
-            foldl([E, A, B]>>(append(A,[E],B)), TokErrors, StructErrors, E1),
-            foldl([E, A, B]>>(append(A,[E],B)), AstErrors, E1, Errors)
+            append(StructErrors, TokErrors, E1),
+            append(E1, AstErrors, Errors)
         ;   append(StructErrors, TokErrors, E1),
             append(E1, ASTErrors0, Errors)
         )
@@ -155,7 +155,7 @@ check_stmt_errors(call(F, Args), LineNo, Err) :-
     \+ hs_prelude_supported(F, Arity),
     \+ F = write, \+ F = nl, \+ F = read,
     format(string(Msg), "Unknown predicate: ~w/~w", [F, Arity]),
-    format(string(Hint), "Check the predicate name and arity; use :help for supported predicates", []),
+    Hint = "Check the predicate name and arity; use :help for supported predicates",
     make_error(unknown_predicate, Msg, '', LineNo, 0, '', Hint, Err).
 
 % --- call: wrong arity for known predicate ---
@@ -220,11 +220,28 @@ stmt_exprs(put(Expr, _), [Expr]).
 stmt_exprs(write(Expr), [Expr]).
 stmt_exprs(ask(Prompt, _), [Prompt]).
 stmt_exprs(call(_, Args), Args).
-stmt_exprs(if(_, Then, Else), []) :-
-    ( maplist(check_stmt(_,_,_), Then) -> true ; true ),
-    ( maplist(check_stmt(_,_,_), Else) -> true ; true ).
+stmt_exprs(if(_, _, _), []).
 stmt_exprs(repeat_with(_, From, To, _), [From, To]).
 stmt_exprs(nl, []).
+
+%% check_nested_stmts(+Stmts, +LineNo, -Errors)
+% Check nested statement lists (if branches, loop bodies) for errors.
+check_nested_stmts([], _, []).
+check_nested_stmts([S|Ss], LineNo, Errors) :-
+    findall(E, check_stmt_errors(S, LineNo, E), SE),
+    check_nested_stmts(Ss, LineNo, Rest),
+    append(SE, Rest, Errors).
+
+% Override if/repeat to recurse into nested bodies
+check_stmt_errors(if(_Cond, Then, Else), LineNo, Err) :-
+    check_nested_stmts(Then, LineNo, ThenErrors),
+    check_nested_stmts(Else, LineNo, ElseErrors),
+    append(ThenErrors, ElseErrors, AllErrors),
+    member(Err, AllErrors).
+
+check_stmt_errors(repeat_with(_, _, _, Body), LineNo, Err) :-
+    check_nested_stmts(Body, LineNo, BodyErrors),
+    member(Err, BodyErrors).
 
 % ===========================================================================
 % Source scan checks (without tokenising) – detect structural issues
