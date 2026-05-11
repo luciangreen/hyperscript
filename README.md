@@ -101,7 +101,7 @@ starlog_to_hs(+StarlogSource, +Options, -HyperScriptSource).
 
 Supported options:
 - `compressed(true|false)`
-- `style(method_chain|nested|compressed)`
+- `style(method_chain|nested|compressed)` (`compressed` style is an alias for `method_chain`)
 - `preserve_comments(true|false)`
 - `trace(true|false)`
 

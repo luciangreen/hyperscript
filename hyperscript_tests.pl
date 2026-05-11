@@ -1366,6 +1366,18 @@ test(s8_roundtrip_nested, [true]) :-
     sub_string(HS2, _, _, _, "put \"Hello\" & \"World\" into X"),
     sub_string(HS2, _, _, _, "put string_length(X) into N").
 
+test(s8_to_starlog_trace_prefix, [true]) :-
+    hs_to_starlog("put 1 into X",
+                  [style(method_chain), trace(true)],
+                  Starlog),
+    sub_string(Starlog, 0, _, _, "% trace:on").
+
+test(s8_from_starlog_trace_prefix, [true]) :-
+    starlog_to_hs("string_concat(\"A\",\"B\",X).",
+                  [style(nested), trace(true)],
+                  HS),
+    sub_string(HS, 0, _, _, "% trace:on").
+
 :- end_tests(stage8_conversion).
 
 % ---------------------------------------------------------------------------

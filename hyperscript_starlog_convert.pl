@@ -93,9 +93,13 @@ hs_stmt_to_starlog_line(_Style, ask(Prompt, Var), Line) :- !,
     hs_expr_to_starlog_method(Prompt, PromptText),
     format(string(Line), "ask(~w,~w).", [PromptText, Var]).
 hs_stmt_to_starlog_line(_, if(_, _, _), _) :-
-    throw(error(unsupported_conversion(if), context(hs_to_starlog/3, "if/then/else conversion is not supported"))).
+    throw(error(unsupported_conversion(if),
+                context(hs_to_starlog/3,
+                        "if/then/else conversion is not supported because this converter currently handles linear single-statement mappings only"))).
 hs_stmt_to_starlog_line(_, repeat_with(_, _, _, _), _) :-
-    throw(error(unsupported_conversion(repeat), context(hs_to_starlog/3, "repeat conversion is not supported"))).
+    throw(error(unsupported_conversion(repeat),
+                context(hs_to_starlog/3,
+                        "repeat conversion is not supported because loop blocks are not yet lowered into equivalent Starlog clauses"))).
 
 hs_put_expr_to_nested_line(concat(A, B), Var, Line) :- !,
     hs_concat_predicate(A, B, Pred),
