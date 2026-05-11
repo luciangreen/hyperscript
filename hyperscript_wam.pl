@@ -26,6 +26,8 @@
 
 :- module(hyperscript_wam, [
     hs_compile/2,
+    hs_semantic_check/3,
+    hs_execute/2,
     hs_run_bc/2,
     hs_query/2,
     hs_query_env/3,
@@ -50,6 +52,7 @@
 :- use_module(library(assoc)).
 :- use_module(hyperscript_parser, [hs_tokenise/2, hs_parse/2]).
 :- use_module(hyperscript_prelude, [hs_prelude_call/2]).
+:- use_module(hyperscript_errors, [hs_check_ast/2, hs_check_singletons/2]).
 :- use_module(hyperscript,
         [ hs_eval/3, hs_eval_cond/2, hs_apply_cond/3,
           hs_print_value/1, hs_concat/3, hs_arith/4, hs_apply_method/4 ]).
@@ -265,6 +268,13 @@ hs_compile(Source, Bytecode) :-
     hs_tokenise(Source, Tokens),
     hs_parse(Tokens, Stmts),
     hs_compile_ast(Stmts, Bytecode).
+
+%% hs_semantic_check(+AST, -CheckedAST, -Errors)
+% Run Stage-7 semantic checks and keep AST unchanged for successful pipeline flow.
+hs_semantic_check(AST, AST, Errors) :-
+    hs_check_ast(AST, AstErrors),
+    hs_check_singletons(AST, SingletonErrors),
+    append(AstErrors, SingletonErrors, Errors).
 
 %% hs_compile_ast(+Stmts, -Bytecode)
 hs_compile_ast(Stmts, Bytecode) :-
@@ -580,8 +590,13 @@ hs_run_bc(Bytecode, Env) :-
     ->  wam_env_to_hs(WamEnv, Heap, Env)
     ;   Status == fail
     ->  Env = []
-    ;   throw(hs_wam_error(Status))
-    ).
+     ;   throw(hs_wam_error(Status))
+     ).
+
+%% hs_execute(+Bytecode, -Result)
+% Stage-10 pipeline alias for executing compiled WAM bytecode.
+hs_execute(Bytecode, Result) :-
+    hs_run_bc(Bytecode, Result).
 
 wam_run_to_done(State, State) :-
     wam_state_done(State), !.
