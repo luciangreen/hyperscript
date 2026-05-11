@@ -90,6 +90,39 @@ put abs(-5) into V
 
 ---
 
+## Stage 8 – Starlog conversion
+
+HyperScript now supports two-way conversion with:
+
+```prolog
+hs_to_starlog(+HyperScriptSource, +Options, -StarlogSource).
+starlog_to_hs(+StarlogSource, +Options, -HyperScriptSource).
+```
+
+Supported options:
+- `compressed(true|false)`
+- `style(method_chain|nested|compressed)` (`compressed` style is an alias for `method_chain`)
+- `preserve_comments(true|false)`
+- `trace(true|false)`
+
+Example:
+
+```prolog
+?- hs_to_starlog("put \"Hello\" & \"World\" into X",
+                 [compressed(true), style(method_chain)],
+                 S).
+S = "starlog_call(X is \"Hello\":\"World\").".
+```
+
+```prolog
+?- starlog_to_hs("string_concat(\"Hello\",\"World\",X).",
+                 [style(nested)],
+                 HS).
+HS = "put \"Hello\" & \"World\" into X".
+```
+
+---
+
 ## Running HyperScript files
 
 ```sh
@@ -140,5 +173,6 @@ Tests cover the tokeniser, parser, and executor.
 |------|---------|
 | `hyperscript.pl` | Main module – executor and top-level runners |
 | `hyperscript_parser.pl` | Tokeniser (`hs_tokenise/2`) and parser (`hs_parse/2`) |
+| `hyperscript_starlog_convert.pl` | Stage-8 HyperScript ↔ Starlog conversion |
 | `hyperscript_tests.pl` | PLUnit test suite |
 | `examples/hyperscript_basic.hspl` | Example script |

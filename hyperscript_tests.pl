@@ -12,6 +12,7 @@
 :- use_module(hyperscript_prelude).
 :- use_module(hyperscript_repl).
 :- use_module(hyperscript_errors).
+:- use_module(hyperscript_starlog_convert).
 
 % ---------------------------------------------------------------------------
 % Tokeniser tests
@@ -1322,6 +1323,62 @@ test(s7_roundtrip_method_chain_no_errors) :-
     \+ member(hs_error(malformed_chain, _, _, _, _, _, _), Errors).
 
 :- end_tests(stage7_errors).
+
+% ---------------------------------------------------------------------------
+% Stage 8 – Conversion to/from compressed Starlog
+% ---------------------------------------------------------------------------
+
+:- begin_tests(stage8_conversion).
+
+test(s8_to_starlog_method_chain_string_concat, [true(Starlog == "starlog_call(X is \"Hello\":\"World\").")]) :-
+    hs_to_starlog("put \"Hello\" & \"World\" into X",
+                  [compressed(true), style(method_chain)],
+                  Starlog).
+
+test(s8_to_starlog_nested_concat, [true]) :-
+    hs_to_starlog("put \"Hello\" & \"World\" into X",
+                  [compressed(true), style(nested)],
+                  Starlog),
+    sub_string(Starlog, _, _, _, "string_concat(\"Hello\",\"World\",X).").
+
+test(s8_to_starlog_nested_result_last, [true]) :-
+    hs_to_starlog("put string_length(X) into N",
+                  [compressed(true), style(nested)],
+                  Starlog),
+    sub_string(Starlog, _, _, _, "string_length(X,N).").
+
+test(s8_from_starlog_method_chain, [true]) :-
+    starlog_to_hs("starlog_call(X is \"Hello\":\"World\").",
+                  [style(method_chain)],
+                  HS),
+    sub_string(HS, _, _, _, "put \"Hello\" & \"World\" into X").
+
+test(s8_from_starlog_nested, [true]) :-
+    starlog_to_hs("string_concat(\"Hello\",\"World\",X).",
+                  [style(nested)],
+                  HS),
+    sub_string(HS, _, _, _, "put \"Hello\" & \"World\" into X").
+
+test(s8_roundtrip_nested, [true]) :-
+    Source = "put \"Hello\" & \"World\" into X\nput string_length(X) into N",
+    hs_to_starlog(Source, [compressed(true), style(nested)], Starlog),
+    starlog_to_hs(Starlog, [style(nested)], HS2),
+    sub_string(HS2, _, _, _, "put \"Hello\" & \"World\" into X"),
+    sub_string(HS2, _, _, _, "put string_length(X) into N").
+
+test(s8_to_starlog_trace_prefix, [true]) :-
+    hs_to_starlog("put 1 into X",
+                  [style(method_chain), trace(true)],
+                  Starlog),
+    sub_string(Starlog, 0, _, _, "% trace:on").
+
+test(s8_from_starlog_trace_prefix, [true]) :-
+    starlog_to_hs("string_concat(\"A\",\"B\",X).",
+                  [style(nested), trace(true)],
+                  HS),
+    sub_string(HS, 0, _, _, "% trace:on").
+
+:- end_tests(stage8_conversion).
 
 % ---------------------------------------------------------------------------
 % Test runner entry point

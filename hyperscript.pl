@@ -20,12 +20,15 @@
     hs_concat/3,
     hs_arith/4,
     hs_apply_method/4,
+    hs_to_starlog/3,
+    starlog_to_hs/3,
     hs_tokenise/2,
     hs_parse/2
 ]).
 
 :- use_module(hyperscript_parser).
 :- use_module(hyperscript_prelude, [hs_prelude_call/2, hs_prelude_eval_call/3]).
+:- use_module(hyperscript_starlog_convert, [hs_to_starlog/3, starlog_to_hs/3]).
 
 :- discontiguous hs_eval/3.
 
