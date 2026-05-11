@@ -21,13 +21,16 @@ hs_to_starlog_impl(HyperScriptSource, Options, StarlogSource) :-
     hs_option(style, Options, nested, Style0),
     normalise_style(Style0, Style),
     hs_option(preserve_comments, Options, false, PreserveComments),
+    hs_option(trace, Options, false, Trace),
     hs_tokenise(HyperScriptSource, Tokens),
     hs_parse(Tokens, AST),
     maplist(hs_stmt_to_starlog_line(Style), AST, CodeLines),
     include(non_empty_string, CodeLines, CodeLines1),
     source_comment_lines(HyperScriptSource, CommentLines0),
     ( PreserveComments == true -> CommentLines = CommentLines0 ; CommentLines = [] ),
-    append(CommentLines, CodeLines1, AllLines),
+    ( Trace == true -> TraceLines = ["% trace:on"] ; TraceLines = [] ),
+    append(CommentLines, TraceLines, MetaLines),
+    append(MetaLines, CodeLines1, AllLines),
     atomic_list_concat(AllLines, "\n", StarlogSource).
 
 %% starlog_to_hs(+StarlogSource, +Options, -HyperScriptSource)
@@ -41,11 +44,14 @@ starlog_to_hs_impl(StarlogSource, Options, HyperScriptSource) :-
     hs_option(style, Options, nested, Style0),
     normalise_style(Style0, Style),
     hs_option(preserve_comments, Options, true, PreserveComments),
+    hs_option(trace, Options, false, Trace),
     split_string(StarlogSource, "\n", "", RawLines),
     maplist(string_trim, RawLines, Trimmed),
     maplist(starlog_line_to_hs_line(Style, PreserveComments), Trimmed, HsLines0),
     include(non_empty_string, HsLines0, HsLines),
-    atomic_list_concat(HsLines, "\n", HyperScriptSource).
+    ( Trace == true -> Prefix = ["% trace:on"] ; Prefix = [] ),
+    append(Prefix, HsLines, OutLines),
+    atomic_list_concat(OutLines, "\n", HyperScriptSource).
 
 hs_option(Key, Options, Default, Value) :-
     Opt =.. [Key, Value0],
