@@ -117,6 +117,7 @@ scan_quotes([0'"|Rest], Pos, in_string(_), Col) :- !,
     Pos1 is Pos + 1,
     scan_quotes(Rest, Pos1, in_normal, Col).
 scan_quotes([0'%|_], _Pos, in_normal, _) :- !, fail.  % comment ends line
+scan_quotes([0'-,0'-|_], _Pos, in_normal, _) :- !, fail.  % -- comment ends line
 scan_quotes([_|Rest], Pos, State, Col) :-
     Pos1 is Pos + 1,
     scan_quotes(Rest, Pos1, State, Col).

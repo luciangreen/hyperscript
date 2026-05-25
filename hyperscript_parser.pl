@@ -29,6 +29,9 @@ hs_keyword(repeat).
 hs_keyword(with).
 hs_keyword(from).
 hs_keyword(to).
+hs_keyword(on).
+hs_keyword(function).
+hs_keyword(return).
 
 % ---------------------------------------------------------------------------
 % Tokeniser
@@ -55,6 +58,10 @@ scan_tokens([C|Cs], Toks) :-
 
     ;   C =:= 0'%                          % line comment
     ->  skip_line(Cs, Rest),
+        scan_tokens(Rest, Toks)
+
+    ;   C =:= 0'-, Cs = [0'-|AfterDash]    % -- line comment
+    ->  skip_line(AfterDash, Rest),
         scan_tokens(Rest, Toks)
 
     ;   C =:= 0'"                          % double-quoted string
@@ -210,6 +217,8 @@ scan_op([C|Cs], Cs, punct(P)) :-
 %   ask(PromptExpr, VarName)        ask Expr giving VarName
 %   if(Cond, ThenBody, ElseBody)    if Cond then ... [else ...] end if / implicit
 %   repeat_with(Var,From,To,Body)   repeat with Var from From to To ... end repeat
+%   on_event(Name, Body)            on Name ... end Name
+%   fun_def(Name, Params, Body, R)  function Name P1, P2 ... return R end Name
 %   call(Functor, Args)             generic predicate call
 %   query(Goal)                     ?- Goal  (Prolog query)
 %   assign(VarName, Expr)           VarName := Expr  (alternative assignment)
@@ -269,6 +278,15 @@ statement(repeat_with(Var, From, To, Body)) -->
     [kw(to)],   expression(To),
     repeat_stmts(Body).
 
+statement(on_event(Name, Body)) -->
+    [kw(on)], identifier_name(Name),
+    on_stmts(Name, Body).
+
+statement(fun_def(Name, Params, Body, ReturnExpr)) -->
+    [kw(function)], identifier_name(Name),
+    function_params(Params),
+    function_stmts(Name, Body, ReturnExpr).
+
 statement(call(F, Args)) -->
     [atom(F)], [punct('(')], arg_list(Args), [punct(')')].
 
@@ -299,6 +317,29 @@ repeat_stmts([]) --> [kw(end), kw(repeat)], !.
 repeat_stmts([]) --> \+ [_], !.
 repeat_stmts([S|Ss]) -->
     statement(S), opt_dot, repeat_stmts(Ss).
+
+on_stmts(Name, []) --> [kw(end), atom(Name)], !.
+on_stmts(Name, []) --> [kw(end), var(Name)], !.
+on_stmts(Name, [S|Ss]) -->
+    statement(S), opt_dot, on_stmts(Name, Ss).
+
+function_stmts(Name, [], ReturnExpr) -->
+    [kw(return)], expression(ReturnExpr), opt_dot,
+    [kw(end), atom(Name)], !.
+function_stmts(Name, [], ReturnExpr) -->
+    [kw(return)], expression(ReturnExpr), opt_dot,
+    [kw(end), var(Name)], !.
+function_stmts(Name, [S|Ss], ReturnExpr) -->
+    statement(S), opt_dot,
+    function_stmts(Name, Ss, ReturnExpr).
+
+function_params([]) --> [].
+function_params([P|Ps]) -->
+    identifier_name(P), function_params_rest(Ps).
+
+function_params_rest([]) --> [].
+function_params_rest([P|Ps]) -->
+    [punct(',')], identifier_name(P), function_params_rest(Ps).
 
 opt_dot --> [punct('.')], !.
 opt_dot --> [].
@@ -430,3 +471,5 @@ arg_list_rest([A|As]) -->
     arg_list_rest(As).
 
 variable_name(V) --> [var(V)].
+identifier_name(V) --> [atom(V)].
+identifier_name(V) --> [var(V)].

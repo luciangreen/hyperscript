@@ -72,6 +72,9 @@ test(list_tokens) :-
 test(comment_skipped) :-
     hs_tokenise("% this is a comment\nfoo", [atom(foo)]).
 
+test(double_dash_comment_skipped) :-
+    hs_tokenise("-- this is a comment\nfoo", [atom(foo)]).
+
 :- end_tests(tokeniser).
 
 % ---------------------------------------------------------------------------
@@ -127,6 +130,17 @@ test(parse_method_chain) :-
 test(parse_predicate_call) :-
     hs_tokenise("foo(1,2)", T),
     hs_parse(T, [call(foo, [num(1), num(2)])]).
+
+test(parse_on_main_event) :-
+    hs_tokenise("on main write hello end main", T),
+    hs_parse(T, [on_event(main, [write(atom(hello))])]).
+
+test(parse_function_definition) :-
+    hs_tokenise("function calculateArea shapeWidth, shapeHeight return shapeWidth * shapeHeight end calculateArea", T),
+    hs_parse(T, [fun_def(calculateArea,
+                         [shapeWidth, shapeHeight],
+                         [],
+                         arith('*', atom(shapeWidth), atom(shapeHeight)))]).
 
 :- end_tests(parser).
 
@@ -194,6 +208,14 @@ test(nl_output, [true(Output == "\n")]) :-
 test(predicate_call) :-
     exec_output("write hello", Output),
     Output == "hello\n".
+
+test(main_event_runs_on_startup, [true(Output == "hello\n")]) :-
+    with_output_to(string(Output),
+        hs_run("on main\nwrite \"hello\"\nend main")).
+
+test(function_definition_and_call) :-
+    exec("function calculateArea shapeWidth, shapeHeight\nreturn shapeWidth * shapeHeight\nend calculateArea\nput calculateArea(6,7) into Area", Env),
+    memberchk('Area'-42, Env).
 
 :- end_tests(execution).
 
