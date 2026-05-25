@@ -44,8 +44,10 @@
 hs_run(Source) :-
     hs_tokenise(Source, Tokens),
     hs_parse(Tokens, Stmts),
+    hs_prepare_program(Stmts, Functions, MainBody, TopLevelStmts),
+    ( MainBody = some(Body) -> ExecStmts = Body ; ExecStmts = TopLevelStmts ),
     empty_env(Env0),
-    hs_execute(Stmts, Env0, _).
+    hs_with_functions(Functions, hs_execute_core(ExecStmts, Env0, _)).
 
 %% hs_run_file(+File)
 % Load and execute a .hspl file.
@@ -77,8 +79,13 @@ env_set([Other|Rest], Name, Value, [Other|Rest2]) :-
 %% hs_execute(+Stmts, +EnvIn, -EnvOut)
 hs_execute([], Env, Env).
 hs_execute([S|Ss], Env0, EnvOut) :-
+    hs_prepare_program([S|Ss], Functions, _MainBody, ExecStmts),
+    hs_with_functions(Functions, hs_execute_core(ExecStmts, Env0, EnvOut)).
+
+hs_execute_core([], Env, Env).
+hs_execute_core([S|Ss], Env0, EnvOut) :-
     hs_exec_one(S, Env0, Env1),
-    hs_execute(Ss, Env1, EnvOut).
+    hs_execute_core(Ss, Env1, EnvOut).
 
 %% hs_exec_one(+Stmt, +EnvIn, -EnvOut)
 
@@ -105,8 +112,8 @@ hs_exec_one(ask(Prompt, VarName), Env0, Env1) :-
 % if Cond then Then else Else
 hs_exec_one(if(Cond, Then, Else), Env0, EnvOut) :-
     (   hs_eval_cond(Cond, Env0)
-    ->  hs_execute(Then, Env0, EnvOut)
-    ;   hs_execute(Else, Env0, EnvOut)
+    ->  hs_execute_core(Then, Env0, EnvOut)
+    ;   hs_execute_core(Else, Env0, EnvOut)
     ).
 
 % repeat with Var from From to To ... body
@@ -115,10 +122,17 @@ hs_exec_one(repeat_with(Var, FromExpr, ToExpr, Body), Env0, EnvOut) :-
     hs_eval(ToExpr,   Env0, To),
     hs_repeat_loop(Var, From, To, Body, Env0, EnvOut).
 
+% event/function declarations do not execute directly
+hs_exec_one(on_event(_Name, _Body), Env, Env).
+hs_exec_one(fun_def(_Name, _Params, _Body, _Return), Env, Env).
+
 % Generic predicate call: call(F, Args)
 hs_exec_one(call(F, ArgExprs), Env0, Env0) :-
     maplist(hs_eval_arg(Env0), ArgExprs, Args),
-    hs_prelude_call(F, Args).
+    ( hs_call_user_function(F, Args, Env0, _)
+    -> true
+    ; hs_prelude_call(F, Args)
+    ).
 
 hs_eval_arg(Env, Expr, Val) :- hs_eval(Expr, Env, Val).
 
@@ -128,7 +142,7 @@ hs_repeat_loop(_, From, To, _, Env, Env) :-
 hs_repeat_loop(Var, From, To, Body, Env0, EnvOut) :-
     From =< To,
     env_set(Env0, Var, From, Env1),
-    hs_execute(Body, Env1, Env2),
+    hs_execute_core(Body, Env1, Env2),
     Next is From + 1,
     hs_repeat_loop(Var, Next, To, Body, Env2, EnvOut).
 
@@ -151,9 +165,15 @@ hs_eval_cond(call(false, []), _) :- !, fail.
 hs_eval_cond(call(F, ArgExprs), Env) :-
     ArgExprs \= [],
     maplist(hs_eval_arg(Env), ArgExprs, Args),
-    hs_prelude_call(F, Args).
-hs_eval_cond(call(F, []), _Env) :-
-    hs_prelude_call(F, []).
+    ( hs_call_user_function(F, Args, Env, _)
+    -> true
+    ; hs_prelude_call(F, Args)
+    ).
+hs_eval_cond(call(F, []), Env) :-
+    ( hs_call_user_function(F, [], Env, _)
+    -> true
+    ; hs_prelude_call(F, [])
+    ).
 
 hs_apply_cond('=',    A, B) :- A = B.
 hs_apply_cond('\\=',  A, B) :- A \= B.
@@ -175,6 +195,8 @@ hs_apply_cond(is,     A, B) :- A =:= B.
 
 hs_eval(num(N), _, N).
 hs_eval(str(S), _, S).
+hs_eval(atom(A), Env, Val) :-
+    hs_lookup_local_atom(A, Env, Val), !.
 hs_eval(atom(A), _, A).
 hs_eval(var(V), Env, Val) :- env_get(Env, V, Val).
 
@@ -219,7 +241,10 @@ hs_eval(call(is, [LExpr, RExpr]), Env, Val) :- !,
     hs_eval(LExpr, Env, Val).   % bind if LExpr is a var name string – handled
 hs_eval(call(F, ArgExprs), Env, Val) :-
     maplist(hs_eval_arg(Env), ArgExprs, Args),
-    hs_prelude_eval_call(F, Args, Val).
+    ( hs_call_user_function(F, Args, Env, Val)
+    -> true
+    ; hs_prelude_eval_call(F, Args, Val)
+    ).
 
 % method name as atom (0-arg method) – handled by the hs_eval(atom(A),_,A) clause above.
 
@@ -276,3 +301,80 @@ hs_apply_method(call(Name, ArgExprs), Input, Env, Val) :-
 
 hs_print_value(V) :-
     (string(V) -> write(V) ; print(V)).
+
+% ---------------------------------------------------------------------------
+% Program preparation and user-function support
+% ---------------------------------------------------------------------------
+
+hs_prepare_program(Stmts, Functions, MainBody, TopLevelStmts) :-
+    hs_collect_functions(Stmts, [], FunctionsRev),
+    reverse(FunctionsRev, Functions),
+    ( hs_find_main_event(Stmts, Body) -> MainBody = some(Body) ; MainBody = none ),
+    hs_collect_top_level_exec(Stmts, TopLevelStmts).
+
+hs_collect_functions([], Acc, Acc).
+hs_collect_functions([fun_def(Name, Params, Body, ReturnExpr)|Ss], Acc0, Acc) :- !,
+    hs_collect_functions(Ss, [Name-fun(Params, Body, ReturnExpr)|Acc0], Acc).
+hs_collect_functions([_|Ss], Acc0, Acc) :-
+    hs_collect_functions(Ss, Acc0, Acc).
+
+hs_find_main_event([on_event(main, Body)|_], Body) :- !.
+hs_find_main_event([_|Ss], Body) :-
+    hs_find_main_event(Ss, Body).
+
+hs_collect_top_level_exec([], []).
+hs_collect_top_level_exec([fun_def(_,_,_,_)|Ss], Out) :- !,
+    hs_collect_top_level_exec(Ss, Out).
+hs_collect_top_level_exec([on_event(_,_)|Ss], Out) :- !,
+    hs_collect_top_level_exec(Ss, Out).
+hs_collect_top_level_exec([S|Ss], [S|Out]) :-
+    hs_collect_top_level_exec(Ss, Out).
+
+hs_with_functions(Functions, Goal) :-
+    catch(nb_getval(hs_functions, Prev), _, Prev = no_previous_value),
+    setup_call_cleanup(
+        nb_setval(hs_functions, Functions),
+        Goal,
+        ( Prev == no_previous_value
+        -> catch(nb_delete(hs_functions), _, true)
+        ;  nb_setval(hs_functions, Prev)
+        )).
+
+hs_call_user_function(F, Args, _, ReturnVal) :-
+    hs_current_functions(Functions),
+    memberchk(F-fun(Params, Body, ReturnExpr), Functions),
+    length(Params, Arity),
+    length(Args, Arity),
+    hs_bind_params(Params, Args, [], LocalEnv0),
+    hs_with_local_names(Params, (
+        hs_execute_core(Body, LocalEnv0, LocalEnv1),
+        hs_eval(ReturnExpr, LocalEnv1, ReturnVal)
+    )).
+
+hs_bind_params([], [], Env, Env).
+hs_bind_params([P|Ps], [A|As], Env0, EnvOut) :-
+    env_set(Env0, P, A, Env1),
+    hs_bind_params(Ps, As, Env1, EnvOut).
+
+hs_current_functions(Functions) :-
+    catch(nb_getval(hs_functions, Functions0), _, Functions0 = []),
+    ( is_list(Functions0) -> Functions = Functions0 ; Functions = [] ).
+
+hs_with_local_names(LocalNames, Goal) :-
+    catch(nb_getval(hs_local_names, Prev), _, Prev = no_previous_value),
+    setup_call_cleanup(
+        nb_setval(hs_local_names, LocalNames),
+        Goal,
+        ( Prev == no_previous_value
+        -> catch(nb_delete(hs_local_names), _, true)
+        ;  nb_setval(hs_local_names, Prev)
+        )).
+
+hs_current_local_names(LocalNames) :-
+    catch(nb_getval(hs_local_names, LocalNames0), _, LocalNames0 = []),
+    ( is_list(LocalNames0) -> LocalNames = LocalNames0 ; LocalNames = [] ).
+
+hs_lookup_local_atom(A, Env, Val) :-
+    hs_current_local_names(LocalNames),
+    memberchk(A, LocalNames),
+    memberchk(A-Val, Env).
