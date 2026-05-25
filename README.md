@@ -40,6 +40,45 @@ else
 end if
 ```
 
+### Comments, events, and functions
+
+#### Comment types
+
+- `% ...` line comments
+- `-- ...` line comments
+
+Both comment forms run to the end of the current line and are ignored by the tokeniser.
+
+#### Events
+
+Event block syntax:
+
+```hyperscript
+on eventName
+    ...
+end eventName
+```
+
+- Parsed as `on_event(EventName, Body)`.
+- In `hs_run/1`, `on main ... end main` is the startup event body that is executed.
+- Other event declarations are currently parsed and stored but not automatically dispatched.
+
+#### Functions
+
+Function definition syntax:
+
+```hyperscript
+function functionName param1, param2
+    ...
+    return expression
+end functionName
+```
+
+- Parsed as `fun_def(Name, Params, Body, ReturnExpr)`.
+- Function calls are supported both as statements and expressions:
+  - `myPredicate(Arg1, Arg2)` (statement-style call)
+  - `put myFunction(Arg1, Arg2) into Result` (expression-style call)
+
 ### Supported constructs
 
 | Construct | Example |
@@ -55,6 +94,10 @@ end if
 | List concat | `put [1,2] & [3,4] into L` |
 | Arithmetic | `put (10 + 5) * 2 into N` |
 | Method chain | `put X >> atom_length into N` |
+| Event block | `on main ... end main` |
+| Function definition | `function f X return X end f` |
+| Function/predicate call | `f(1)` |
+| Comments | `% note` / `-- note` |
 
 ### Arithmetic operators
 
