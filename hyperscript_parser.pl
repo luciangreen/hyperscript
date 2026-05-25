@@ -52,16 +52,15 @@ hs_tokenise(Source, Tokens) :-
     scan_tokens(Codes, Tokens).
 
 scan_tokens([], []).
+scan_tokens([0'-, 0'-|Cs], Toks) :- !,
+    skip_line(Cs, Rest),
+    scan_tokens(Rest, Toks).
 scan_tokens([C|Cs], Toks) :-
     (   code_type(C, space)
     ->  scan_tokens(Cs, Toks)
 
     ;   C =:= 0'%                          % line comment
     ->  skip_line(Cs, Rest),
-        scan_tokens(Rest, Toks)
-
-    ;   C =:= 0'-, Cs = [0'-|AfterDash]    % -- line comment
-    ->  skip_line(AfterDash, Rest),
         scan_tokens(Rest, Toks)
 
     ;   C =:= 0'"                          % double-quoted string

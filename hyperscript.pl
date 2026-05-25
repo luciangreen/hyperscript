@@ -169,8 +169,8 @@ hs_eval_cond(call(F, ArgExprs), Env) :-
     -> true
     ; hs_prelude_call(F, Args)
     ).
-hs_eval_cond(call(F, []), _Env) :-
-    ( hs_call_user_function(F, [], _Env, _)
+hs_eval_cond(call(F, []), Env) :-
+    ( hs_call_user_function(F, [], Env, _)
     -> true
     ; hs_prelude_call(F, [])
     ).
@@ -196,7 +196,7 @@ hs_apply_cond(is,     A, B) :- A =:= B.
 hs_eval(num(N), _, N).
 hs_eval(str(S), _, S).
 hs_eval(atom(A), Env, Val) :-
-    memberchk(A-Val, Env), !.
+    hs_lookup_local_atom(A, Env, Val), !.
 hs_eval(atom(A), _, A).
 hs_eval(var(V), Env, Val) :- env_get(Env, V, Val).
 
@@ -336,18 +336,20 @@ hs_with_functions(Functions, Goal) :-
         nb_setval(hs_functions, Functions),
         Goal,
         ( Prev == no_previous_value
-        -> nb_setval(hs_functions, [])
+        -> catch(nb_delete(hs_functions), _, true)
         ;  nb_setval(hs_functions, Prev)
         )).
 
-hs_call_user_function(F, Args, CallerEnv, ReturnVal) :-
+hs_call_user_function(F, Args, _, ReturnVal) :-
     hs_current_functions(Functions),
     memberchk(F-fun(Params, Body, ReturnExpr), Functions),
     length(Params, Arity),
     length(Args, Arity),
-    hs_bind_params(Params, Args, CallerEnv, LocalEnv0),
-    hs_execute_core(Body, LocalEnv0, LocalEnv1),
-    hs_eval(ReturnExpr, LocalEnv1, ReturnVal).
+    hs_bind_params(Params, Args, [], LocalEnv0),
+    hs_with_local_names(Params, (
+        hs_execute_core(Body, LocalEnv0, LocalEnv1),
+        hs_eval(ReturnExpr, LocalEnv1, ReturnVal)
+    )).
 
 hs_bind_params([], [], Env, Env).
 hs_bind_params([P|Ps], [A|As], Env0, EnvOut) :-
@@ -357,3 +359,22 @@ hs_bind_params([P|Ps], [A|As], Env0, EnvOut) :-
 hs_current_functions(Functions) :-
     catch(nb_getval(hs_functions, Functions0), _, Functions0 = []),
     ( is_list(Functions0) -> Functions = Functions0 ; Functions = [] ).
+
+hs_with_local_names(LocalNames, Goal) :-
+    catch(nb_getval(hs_local_names, Prev), _, Prev = no_previous_value),
+    setup_call_cleanup(
+        nb_setval(hs_local_names, LocalNames),
+        Goal,
+        ( Prev == no_previous_value
+        -> catch(nb_delete(hs_local_names), _, true)
+        ;  nb_setval(hs_local_names, Prev)
+        )).
+
+hs_current_local_names(LocalNames) :-
+    catch(nb_getval(hs_local_names, LocalNames0), _, LocalNames0 = []),
+    ( is_list(LocalNames0) -> LocalNames = LocalNames0 ; LocalNames = [] ).
+
+hs_lookup_local_atom(A, Env, Val) :-
+    hs_current_local_names(LocalNames),
+    memberchk(A, LocalNames),
+    memberchk(A-Val, Env).
